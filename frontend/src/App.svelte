@@ -20,6 +20,7 @@
   let isSending = false;
   let isReceiving = false;
   let toastMessage = '';
+  let toastType: 'success' | 'error' | 'info' = 'info';
 
   onMount(() => {
     loadTransfers()
@@ -33,7 +34,12 @@
         transfers = [transfer, ...transfers];
       }
 
-      if (transfer.status === 'completed' || transfer.status === 'error') {
+      if (transfer.status === 'completed') {
+        showToast('Transfer completed! 🎉', 'success');
+        if (transfer.id.startsWith('send')) isSending = false;
+        if (transfer.id.startsWith('receive')) isReceiving = false;
+      } else if (transfer.status === 'error') {
+        showToast('Transfer failed. Please try again. 😢', 'error');
         if (transfer.id.startsWith('send')) isSending = false;
         if (transfer.id.startsWith('receive')) isReceiving = false;
       }
@@ -49,11 +55,13 @@
     try {
       const filePath = await SelectFile()
       if (filePath) {
+        showToast('File selected! Generating code...', 'info');
         isSending = true;
         await SendFile(filePath)
       }
     } catch (error) {
       console.error('Error sending file:', error)
+      showToast('Failed to select file.', 'error');
       isSending = false;
     }
   }
@@ -63,25 +71,28 @@
       const path = await SelectDirectory()
       if (path) {
         destinationPath = path
+        showToast('Destination selected!', 'info');
       }
     } catch (error) {
       console.error('Error selecting directory:', error)
+      showToast('Failed to select destination.', 'error');
     }
   }
 
   async function receiveFile() {
     if (isReceiving || !receiveCode.trim() || !destinationPath.trim()) {
-      // Maybe show a more elegant notification later
-      alert('Please enter a code and select a destination directory')
+      showToast('Please enter a code and select a destination.', 'error');
       return
     }
     
     try {
+      showToast('Starting download...', 'info');
       isReceiving = true;
       await ReceiveFile(receiveCode, destinationPath)
       receiveCode = ''
     } catch (error) {
       console.error('Error receiving file:', error)
+      showToast('Failed to receive file.', 'error');
       isReceiving = false;
     }
   }
@@ -111,12 +122,13 @@
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard! 👍');
+    showToast('Copied to clipboard! 👍', 'success');
   }
 
-  function showToast(message: string) {
+  function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     if (toastMessage) return; // Prevent multiple toasts at once
     toastMessage = message;
+    toastType = type;
     setTimeout(() => {
       toastMessage = '';
     }, 3000);
@@ -221,13 +233,13 @@
       </div>
     {/if}
   </div>
-
-  {#if toastMessage}
-    <div class="toast">
-      {toastMessage}
-    </div>
-  {/if}
 </main>
+
+{#if toastMessage}
+  <div class="toast" class:success={toastType === 'success'} class:error={toastType === 'error'}>
+    {toastMessage}
+  </div>
+{/if}
 
 <style>
   main {
@@ -518,6 +530,14 @@
     box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
     z-index: 100;
     animation: fade-in-out 3s ease-in-out forwards;
+  }
+
+  .toast.success {
+    background-color: var(--color-green);
+  }
+
+  .toast.error {
+    background-color: var(--color-red);
   }
 
   @keyframes fade-in-out {
