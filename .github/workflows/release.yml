@@ -104,11 +104,19 @@ jobs:
       - name: Build macOS application
         run: wails build -platform darwin/amd64 -o krokodyl
         
+      - name: Extract macOS executable from app bundle
+        run: |
+          if [ -d "build/bin/krokodyl.app" ]; then
+            cp build/bin/krokodyl.app/Contents/MacOS/krokodyl build/bin/krokodyl-executable
+          else
+            cp build/bin/krokodyl build/bin/krokodyl-executable
+          fi
+        
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: krokodyl-macos
-          path: build/bin/krokodyl
+          path: build/bin/krokodyl-executable
 
   release:
     needs: [build-linux, build-windows, build-macos]
@@ -139,7 +147,7 @@ jobs:
         run: |
           mv artifacts/linux/krokodyl artifacts/krokodyl-linux
           mv artifacts/windows/krokodyl.exe artifacts/krokodyl-windows.exe
-          mv artifacts/macos/krokodyl artifacts/krokodyl-macos
+          mv artifacts/macos/krokodyl-executable artifacts/krokodyl-macos
           
       - name: Create release
         uses: softprops/action-gh-release@v1
