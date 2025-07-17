@@ -8,7 +8,8 @@
       "Bash(go mod:*)",
       "Bash(find:*)",
       "Bash(wails build:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }
