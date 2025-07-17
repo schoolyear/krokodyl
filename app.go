@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -258,12 +259,6 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 func (a *App) SelectFile() (string, error) {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select file to send",
-		Filters: []runtime.FileFilter{
-			{
-				DisplayName: "All Files",
-				Pattern:     "*",
-			},
-		},
 	})
 
 	if err != nil {
@@ -283,4 +278,12 @@ func (a *App) SelectDirectory() (string, error) {
 	}
 
 	return selection, nil
+}
+
+func (a *App) GetDefaultDownloadPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get user home directory")
+	}
+	return filepath.Join(homeDir, "Downloads"), nil
 }

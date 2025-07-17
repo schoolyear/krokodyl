@@ -6,11 +6,11 @@
 
   // Wails imports
   import { EventsOn } from '../wailsjs/runtime/runtime.js';
-  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory } from '../wailsjs/go/main/App.js';
+  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = false; // Tracks if i18n is initialized
-
+  
   interface FileTransfer {
     id: string;
     name: string;
@@ -37,6 +37,16 @@
   })();
 
   onMount(() => {
+    const init = async () => {
+      await loadTransfers();
+      try {
+        destinationPath = await GetDefaultDownloadPath();
+      } catch (error) {
+        console.error("Could not get default download path", error);
+      }
+    };
+    init();
+
     // We must ensure 'isReady' is true before calling any functions that use translations
     const unsubscribe = _.subscribe(async (t) => {
       if (typeof t !== 'function' || !isReady) return;

@@ -3,6 +3,8 @@
 import {main} from '../models';
 import {sync} from '../models';
 
+export function GetDefaultDownloadPath():Promise<string>;
+
 export function GetTransfers():Promise<Array<main.FileTransfer>>;
 
 export function Len():Promise<number>;
