@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go get:*)",
+      "Bash(wails generate:*)",
+      "WebFetch(domain:pkg.go.dev)",
+      "WebFetch(domain:github.com)",
+      "Bash(go mod:*)",
+      "Bash(find:*)",
+      "Bash(wails build:*)"
+    ],
+    "deny": []
+  }
+}
