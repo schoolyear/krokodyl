@@ -139,7 +139,7 @@ jobs:
         run: |
           mv artifacts/linux/krokodyl artifacts/krokodyl-linux
           mv artifacts/windows/krokodyl.exe artifacts/krokodyl-windows.exe
-          mv artifacts/macos/krokodyl artifacts/krokodyl-macos
+          mv artifacts/macos/krokodyl-macos artifacts/krokodyl-macos
           
       - name: Create release
         uses: softprops/action-gh-release@v1
