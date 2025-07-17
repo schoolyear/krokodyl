@@ -304,6 +304,8 @@
     border: 1px solid var(--color-border);
     background-color: var(--color-bg-light);
     color: var(--color-text);
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    min-width: 80px;
   }
 
   .loading-state {
@@ -325,8 +327,8 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 2rem;
-    gap: 2rem;
+    padding: 1rem;
+    gap: 1.5rem;
     min-height: 100vh;
     height: 100vh;
     overflow-y: auto;
@@ -336,22 +338,25 @@
 
   .header {
     text-align: center;
+    padding: 0 1rem;
   }
 
   .header h1 {
-    font-size: 3rem;
+    font-size: clamp(2rem, 5vw, 3rem);
     font-weight: 800;
     color: var(--color-text);
+    margin-bottom: 0.5rem;
   }
 
   .header p {
-    font-size: 1.125rem;
+    font-size: clamp(1rem, 3vw, 1.125rem);
     color: var(--color-text-dim);
+    margin-bottom: 0.5rem;
   }
 
   .card {
     width: 100%;
-    max-width: 500px;
+    max-width: min(500px, calc(100vw - 2rem));
     background-color: var(--color-bg-light);
     border-radius: var(--border-radius);
     border: 1px solid var(--color-border);
@@ -362,23 +367,26 @@
   .tabs {
     display: flex;
     background-color: var(--color-bg-lighter);
+    overflow-x: auto;
   }
 
   .tab {
     flex: 1;
-    padding: 1rem;
+    min-width: 120px;
+    padding: 0.75rem 0.5rem;
     background: none;
     border: none;
     color: var(--color-text-dim);
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     font-weight: 600;
     cursor: pointer;
     transition: var(--transition);
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 0.25rem;
     border-bottom: 2px solid transparent;
+    white-space: nowrap;
   }
 
   .tab:hover {
@@ -391,17 +399,18 @@
   }
 
   .tab-content {
-    padding: 1.5rem;
+    padding: 1rem;
   }
 
   .action-section h2 {
-    font-size: 1.5rem;
+    font-size: clamp(1.25rem, 4vw, 1.5rem);
     margin-bottom: 0.5rem;
   }
 
   .action-section p {
     color: var(--color-text-dim);
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
   }
 
   .input-group {
@@ -415,7 +424,7 @@
     border: 1px solid var(--color-border);
     border-radius: var(--border-radius);
     color: var(--color-text);
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     transition: var(--transition);
   }
 
@@ -428,18 +437,24 @@
   .destination-group {
     display: flex;
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
 
   .destination-group input {
     flex: 1;
+    min-width: 200px;
+  }
+
+  .destination-group .btn {
+    white-space: nowrap;
   }
 
   .btn {
-    padding: 0.75rem 1.5rem;
+    padding: 0.75rem 1rem;
     border: none;
     border-radius: var(--border-radius);
     cursor: pointer;
-    font-size: 1rem;
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     font-weight: 600;
     transition: var(--transition);
     background-color: var(--color-bg-lighter);
@@ -447,6 +462,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    text-align: center;
+    justify-content: center;
+    min-height: 44px; /* Minimum touch target size */
   }
 
   .btn:hover {
@@ -482,11 +500,12 @@
 
   .transfers-section {
     width: 100%;
-    max-width: 700px;
+    max-width: min(700px, calc(100vw - 2rem));
+    padding: 0 1rem;
   }
 
   .transfers-section h2 {
-    font-size: 1.5rem;
+    font-size: clamp(1.25rem, 4vw, 1.5rem);
     margin-bottom: 1rem;
     text-align: left;
   }
@@ -495,14 +514,18 @@
     background-color: var(--color-bg-light);
     border: 2px dashed var(--color-border);
     border-radius: var(--border-radius);
-    padding: 2rem;
+    padding: 1.5rem;
     text-align: center;
     color: var(--color-text-dim);
   }
 
   .empty-state p:first-child {
-    font-size: 3rem;
+    font-size: clamp(2rem, 8vw, 3rem);
     margin-bottom: 1rem;
+  }
+
+  .empty-state p:last-child {
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
   }
 
   .transfer-list {
@@ -515,15 +538,33 @@
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     background-color: var(--color-bg-light);
     border-radius: var(--border-radius);
-    padding: 1rem;
+    padding: 0.75rem;
     border-left: 4px solid var(--status-color);
   }
 
+  @media (max-width: 600px) {
+    .transfer-item {
+      grid-template-columns: auto 1fr;
+      gap: 0.5rem;
+    }
+    
+    .transfer-status {
+      grid-column: 1 / -1;
+      text-align: left;
+      margin-top: 0.5rem;
+    }
+    
+    .progress-bar {
+      width: 100%;
+      max-width: 200px;
+    }
+  }
+
   .status-icon {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
 
   .transfer-details {
@@ -533,19 +574,21 @@
   .filename {
     font-weight: 600;
     color: var(--color-text);
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    word-break: break-word;
   }
 
   .file-list {
-    font-size: 0.875rem;
+    font-size: clamp(0.75rem, 2vw, 0.875rem);
     color: var(--color-text-dim);
     display: flex;
     flex-direction: column;
   }
 
   .file-size {
-    font-size: 0.875rem;
+    font-size: clamp(0.75rem, 2vw, 0.875rem);
     color: var(--color-text-dim);
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
   }
 
   .code-container {
@@ -553,8 +596,9 @@
     align-items: center;
     gap: 0.5rem;
     margin-top: 0.5rem;
-    font-size: 0.875rem;
+    font-size: clamp(0.75rem, 2vw, 0.875rem);
     color: var(--color-text-dim);
+    flex-wrap: wrap;
   }
 
   .code {
@@ -564,6 +608,8 @@
     border-radius: 0.25rem;
     color: var(--color-primary);
     cursor: pointer;
+    word-break: break-all;
+    font-size: clamp(0.75rem, 2vw, 0.875rem);
   }
 
   .code:hover {
@@ -575,10 +621,15 @@
   }
 
   .status-text {
-    font-size: 0.875rem;
+    font-size: clamp(0.75rem, 2vw, 0.875rem);
     font-weight: 600;
     text-transform: capitalize;
     color: var(--status-color);
+  }
+
+  .progress-text {
+    font-size: clamp(0.7rem, 2vw, 0.75rem);
+    color: var(--color-text-dim);
   }
 
   .progress-bar {
@@ -596,11 +647,6 @@
     transition: width 0.3s ease;
   }
 
-  .progress-text {
-    font-size: 0.75rem;
-    color: var(--color-text-dim);
-  }
-
   .toast {
     position: fixed;
     bottom: 2rem;
@@ -613,6 +659,9 @@
     box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
     z-index: 100;
     animation: fade-in-out 3s ease-in-out forwards;
+    max-width: calc(100vw - 4rem);
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    text-align: center;
   }
 
   .toast.success {
@@ -639,6 +688,60 @@
     100% {
       opacity: 0;
       transform: translate(-50%, 20px);
+    }
+  }
+
+  /* Additional responsive improvements */
+  @media (max-width: 480px) {
+    main {
+      padding: 0.5rem;
+      gap: 1rem;
+    }
+    
+    .header {
+      padding: 0;
+    }
+    
+    .header h1 {
+      margin-bottom: 0.25rem;
+    }
+    
+    .header p {
+      margin-bottom: 0.25rem;
+    }
+    
+    .destination-group {
+      flex-direction: column;
+    }
+    
+    .destination-group input {
+      min-width: unset;
+    }
+    
+    .transfers-section {
+      padding: 0;
+    }
+    
+    .toast {
+      bottom: 1rem;
+      padding: 0.75rem 1rem;
+    }
+  }
+
+  @media (max-width: 360px) {
+    .tab {
+      padding: 0.5rem 0.25rem;
+      font-size: 0.875rem;
+    }
+    
+    .btn {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+    }
+    
+    .transfer-item {
+      padding: 0.5rem;
+      gap: 0.5rem;
     }
   }
 </style>

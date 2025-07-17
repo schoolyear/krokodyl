@@ -18,9 +18,13 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "p2p-ui",
-		Width:  1024,
-		Height: 768,
+		Title:         "krokodyl",
+		Width:         800,
+		Height:        600,
+		MinWidth:      400,
+		MinHeight:     500,
+		MaxWidth:      1000,
+		MaxHeight:     800,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

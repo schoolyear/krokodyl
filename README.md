@@ -1,6 +1,6 @@
 ## Project Overview
 
-This is a Wails application called "p2p-ui" that provides a desktop GUI for peer-to-peer file transfers using the croc protocol. The application is built with:
+This is a Wails application called "krokodyl" that provides a desktop GUI for peer-to-peer file transfers using the croc protocol. The application is built with:
 
 - **Backend**: Go with Wails v2 framework
 - **Frontend**: Svelte with TypeScript and Vite
