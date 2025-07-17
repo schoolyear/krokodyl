@@ -298,14 +298,14 @@
 <style>
   /* --- Add styles for new elements --- */
   .lang-selector {
-    margin-top: 1rem;
-    padding: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.375rem;
     border-radius: var(--border-radius);
     border: 1px solid var(--color-border);
     background-color: var(--color-bg-light);
     color: var(--color-text);
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
-    min-width: 80px;
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
+    min-width: 70px;
   }
 
   .loading-state {
@@ -324,44 +324,44 @@
 
   /* --- All previous styles remain the same --- */
   main {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1rem;
-    gap: 1.5rem;
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    align-items: start;
+    padding: 0.75rem;
+    gap: 1rem;
     min-height: 100vh;
     height: 100vh;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     transition: var(--transition);
   }
 
   .header {
     text-align: center;
-    padding: 0 1rem;
+    padding: 0;
   }
 
   .header h1 {
-    font-size: clamp(2rem, 5vw, 3rem);
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
     font-weight: 800;
     color: var(--color-text);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
   }
 
   .header p {
-    font-size: clamp(1rem, 3vw, 1.125rem);
+    font-size: clamp(0.875rem, 2.5vw, 1rem);
     color: var(--color-text-dim);
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
   }
 
   .card {
     width: 100%;
-    max-width: min(500px, calc(100vw - 2rem));
+    max-width: min(500px, calc(100vw - 1.5rem));
     background-color: var(--color-bg-light);
     border-radius: var(--border-radius);
     border: 1px solid var(--color-border);
     overflow: hidden;
     box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    justify-self: center;
   }
 
   .tabs {
@@ -399,22 +399,22 @@
   }
 
   .tab-content {
-    padding: 1rem;
+    padding: 0.75rem;
   }
 
   .action-section h2 {
-    font-size: clamp(1.25rem, 4vw, 1.5rem);
-    margin-bottom: 0.5rem;
+    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
+    margin-bottom: 0.375rem;
   }
 
   .action-section p {
     color: var(--color-text-dim);
-    margin-bottom: 1rem;
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    margin-bottom: 0.75rem;
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
   }
 
   .input-group {
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
   }
 
   .input-group input {
@@ -500,38 +500,48 @@
 
   .transfers-section {
     width: 100%;
-    max-width: min(700px, calc(100vw - 2rem));
-    padding: 0 1rem;
+    max-width: min(700px, calc(100vw - 1.5rem));
+    padding: 0;
+    justify-self: center;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Allow shrinking */
+    overflow: hidden;
   }
 
   .transfers-section h2 {
-    font-size: clamp(1.25rem, 4vw, 1.5rem);
-    margin-bottom: 1rem;
+    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
+    margin-bottom: 0.75rem;
     text-align: left;
+    flex-shrink: 0;
   }
 
   .empty-state {
     background-color: var(--color-bg-light);
     border: 2px dashed var(--color-border);
     border-radius: var(--border-radius);
-    padding: 1.5rem;
+    padding: 1rem;
     text-align: center;
     color: var(--color-text-dim);
+    flex-shrink: 0;
   }
 
   .empty-state p:first-child {
-    font-size: clamp(2rem, 8vw, 3rem);
-    margin-bottom: 1rem;
+    font-size: clamp(1.5rem, 6vw, 2.5rem);
+    margin-bottom: 0.5rem;
   }
 
   .empty-state p:last-child {
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
   }
 
   .transfer-list {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.75rem;
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1;
   }
 
   .transfer-item {
@@ -695,19 +705,15 @@
   @media (max-width: 480px) {
     main {
       padding: 0.5rem;
-      gap: 1rem;
-    }
-    
-    .header {
-      padding: 0;
+      gap: 0.75rem;
     }
     
     .header h1 {
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.125rem;
     }
     
     .header p {
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.125rem;
     }
     
     .destination-group {
@@ -716,10 +722,6 @@
     
     .destination-group input {
       min-width: unset;
-    }
-    
-    .transfers-section {
-      padding: 0;
     }
     
     .toast {
@@ -731,17 +733,53 @@
   @media (max-width: 360px) {
     .tab {
       padding: 0.5rem 0.25rem;
-      font-size: 0.875rem;
+      font-size: 0.8rem;
     }
     
     .btn {
       padding: 0.5rem 0.75rem;
-      font-size: 0.875rem;
+      font-size: 0.8rem;
     }
     
     .transfer-item {
       padding: 0.5rem;
       gap: 0.5rem;
+    }
+  }
+
+  /* Ensure buttons are always visible */
+  @media (max-height: 600px) {
+    .header h1 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      margin-bottom: 0.125rem;
+    }
+    
+    .header p {
+      font-size: clamp(0.75rem, 2vw, 0.875rem);
+      margin-bottom: 0.125rem;
+    }
+    
+    .lang-selector {
+      margin-top: 0.25rem;
+    }
+    
+    .action-section h2 {
+      font-size: clamp(1rem, 3vw, 1.25rem);
+      margin-bottom: 0.25rem;
+    }
+    
+    .action-section p {
+      font-size: clamp(0.75rem, 2vw, 0.825rem);
+      margin-bottom: 0.5rem;
+    }
+    
+    .empty-state {
+      padding: 0.75rem;
+    }
+    
+    .empty-state p:first-child {
+      font-size: clamp(1.25rem, 5vw, 2rem);
+      margin-bottom: 0.25rem;
     }
   }
 </style>
