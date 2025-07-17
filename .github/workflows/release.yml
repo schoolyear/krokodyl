@@ -72,13 +72,22 @@ jobs:
             mv build/bin/krokodyl build/bin/krokodyl-macos
           fi
         
-      - name: Upload artifact
+      - name: Upload artifact (Linux/Windows)
+        if: matrix.os != 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: build/bin/krokodyl${{ matrix.ext }}
+          retention-days: 1
+
+      - name: Upload artifact (macOS)
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: |
-            build/bin/krokodyl${{ matrix.ext }}
             build/bin/krokodyl-macos.tar.gz
+            build/bin/krokodyl-macos
           retention-days: 1
 
   release:
