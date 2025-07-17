@@ -35,11 +35,11 @@ type (
 
 const (
 	FileTransferStatusPreparing FileTransferStatus = "preparing"
-	FileTransferStatusSending                      = "sending"
-	FileTransferStatusReceiving                    = "receiving"
+	FileTransferStatusSending   FileTransferStatus = "sending"
+	FileTransferStatusReceiving FileTransferStatus = "receiving"
 
-	FileTransferStatusError     = "error"
-	FileTransferStatusCompleted = "completed"
+	FileTransferStatusError     FileTransferStatus = "error"
+	FileTransferStatusCompleted FileTransferStatus = "completed"
 )
 
 const (
