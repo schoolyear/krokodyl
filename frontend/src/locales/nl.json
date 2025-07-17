@@ -50,5 +50,13 @@
     "download_started": "Download wordt gestart...",
     "receive_failed": "Bestand ontvangen mislukt.",
     "copied_to_clipboard": "Gekopieerd naar klembord! 👍"
+  },
+  "overwrite": {
+    "title": "Bestand bestaat al",
+    "prompt": "Het bestand `{file}` bestaat al. Wilt u het overschrijven?",
+    "current_size": "Huidige grootte",
+    "new_size": "Nieuwe grootte",
+    "yes": "Ja",
+    "no": "Nee"
   }
 }

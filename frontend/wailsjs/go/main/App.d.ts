@@ -19,6 +19,8 @@ export function RUnlock():Promise<void>;
 
 export function ReceiveFile(arg1:string,arg2:string):Promise<string>;
 
+export function RespondToOverwrite(arg1:string,arg2:string):Promise<void>;
+
 export function SelectDirectory():Promise<string>;
 
 export function SelectFile():Promise<string>;

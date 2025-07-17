@@ -50,5 +50,13 @@
     "download_started": "Iniciando descarga...",
     "receive_failed": "Error al recibir el archivo.",
     "copied_to_clipboard": "¡Copiado al portapapeles! 👍"
+  },
+  "overwrite": {
+    "title": "El archivo ya existe",
+    "prompt": "El archivo `{file}` ya existe. ¿Desea sobrescribirlo?",
+    "current_size": "Tamaño actual",
+    "new_size": "Nuevo tamaño",
+    "yes": "Sí",
+    "no": "No"
   }
 }

@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/schollz/croc/v10/src/croc"
@@ -25,11 +24,20 @@ type FileTransfer struct {
 	Code     string             `json:"code,omitempty"`
 }
 
+type OverwritePrompt struct {
+	TransferID string `json:"transferId"`
+	FileName   string `json:"fileName"`
+	OldSize    int64  `json:"oldSize"`
+	NewSize    int64  `json:"newSize"`
+	Diff       string `json:"diff"`
+}
+
 // App struct
 type (
 	App struct {
-		ctx       context.Context
-		transfers []FileTransfer
+		ctx                context.Context
+		transfers          []FileTransfer
+		overwriteResponses map[string]chan string
 
 		sync.RWMutex
 	}
@@ -48,7 +56,8 @@ const (
 )
 
 const (
-	TransferEventUpdated string = "transfer:updated"
+	TransferEventUpdated   string = "transfer:updated"
+	TransferEventOverwrite string = "transfer:overwrite"
 )
 
 // startup is called when the app starts. The context is saved
@@ -56,6 +65,7 @@ const (
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.transfers = make([]FileTransfer, 0)
+	a.overwriteResponses = make(map[string]chan string)
 }
 
 func (a *App) SendFile(filePath string) (string, error) {
@@ -208,7 +218,6 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
-
 	defer func() {
 		os.Chdir(currentDir)
 	}()
@@ -230,6 +239,23 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 		HashAlgorithm:  "xxhash",
 	}
 
+	tempDir, err := os.MkdirTemp("", "krokodyl-")
+	if err != nil {
+		logrus.WithError(err).Error("error creating temp directory")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		return
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Change to the temporary directory to receive the file
+	if err := os.Chdir(tempDir); err != nil {
+		logrus.WithError(err).Errorf("error changing to temp directory %s", tempDir)
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		return
+	}
+
 	crocClient, err := croc.New(options)
 	if err != nil {
 		logrus.WithError(err).Error("error creating croc client")
@@ -238,35 +264,118 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 		return
 	}
 
-	transfer.Progress = 50
-	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- crocClient.Receive()
-	}()
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			logrus.WithError(err).Error("error receiving files")
-			transfer.Status = FileTransferStatusError
-			runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
-			return
-		}
-	case <-time.After(30 * time.Second):
-		logrus.Error("timeout while waiting for sender")
+	if err := crocClient.Receive(); err != nil {
+		logrus.WithError(err).Error("error receiving files")
 		transfer.Status = FileTransferStatusError
 		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
-	// We don't know the filenames when receiving with croc v10 this way
-	transfer.Name = "Completed"
-	transfer.Files = []string{"File received successfully"}
+	// Now that the file is in the temp directory, get its info
+	receivedFileInfos, err := listFiles(tempDir)
+	if err != nil {
+		logrus.WithError(err).Error("error listing files in temp directory")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		return
+	}
+
+	var receivedFiles []os.FileInfo
+	for _, info := range receivedFileInfos {
+		receivedFiles = append(receivedFiles, info)
+	}
+
+	if len(receivedFiles) == 0 {
+		logrus.Error("no files received")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		return
+	}
+
+	var fileNames []string
+	var totalSize int64
+	for _, fileInfo := range receivedFiles {
+		sourcePath := filepath.Join(tempDir, fileInfo.Name())
+		destPath := filepath.Join(destinationPath, fileInfo.Name())
+
+		// Check if the file already exists
+		if existingInfo, err := os.Stat(destPath); err == nil {
+			// File exists, prompt for overwrite
+			responseChan := make(chan string)
+			a.Lock()
+			a.overwriteResponses[transfer.ID] = responseChan
+			a.Unlock()
+
+			diff, err := getFileDiff(destPath, sourcePath)
+			if err != nil {
+				logrus.WithError(err).Warnf("could not get file diff")
+				diff = "Could not generate file difference."
+			}
+
+			runtime.EventsEmit(a.ctx, TransferEventOverwrite, OverwritePrompt{
+				TransferID: transfer.ID,
+				FileName:   fileInfo.Name(),
+				OldSize:    existingInfo.Size(),
+				NewSize:    fileInfo.Size(),
+				Diff:       diff,
+			})
+
+			// Wait for the user's response
+			response := <-responseChan
+			if response != "yes" {
+				// User chose not to overwrite, so we skip this file
+				logrus.Infof("User chose not to overwrite %s", fileInfo.Name())
+				continue // Move to the next file
+			}
+		}
+
+		// Ensure the destination directory exists
+		if err := os.MkdirAll(filepath.Dir(destPath), os.ModePerm); err != nil {
+			logrus.WithError(err).Errorf("failed to create destination directory for %s", destPath)
+			transfer.Status = FileTransferStatusError
+			runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+			return
+		}
+
+		if err := os.Rename(sourcePath, destPath); err != nil {
+			logrus.WithError(err).Errorf("failed to move file from %s to %s", sourcePath, destPath)
+			transfer.Status = FileTransferStatusError
+			runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+			return
+		}
+
+		fileNames = append(fileNames, fileInfo.Name())
+		totalSize += fileInfo.Size()
+	}
+
+	if len(fileNames) > 0 {
+		transfer.Name = fileNames[0]
+		if len(fileNames) > 1 {
+			transfer.Name = fmt.Sprintf("%s and %d more", fileNames[0], len(fileNames)-1)
+		}
+	} else {
+		transfer.Name = "File received"
+	}
+
+	transfer.Files = fileNames
+	transfer.Size = totalSize
 	transfer.Status = FileTransferStatusCompleted
 	transfer.Progress = 100
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+}
+
+func listFiles(dir string) (map[string]os.FileInfo, error) {
+	files := make(map[string]os.FileInfo)
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			files[path] = info
+		}
+		return nil
+	})
+	return files, err
 }
 
 func (a *App) SelectFile() (string, error) {
@@ -293,10 +402,50 @@ func (a *App) SelectDirectory() (string, error) {
 	return selection, nil
 }
 
+func (a *App) RespondToOverwrite(transferID string, response string) {
+	a.RLock()
+	responseChan, ok := a.overwriteResponses[transferID]
+	a.RUnlock()
+
+	if ok {
+		responseChan <- response
+		a.Lock()
+		delete(a.overwriteResponses, transferID)
+		a.Unlock()
+	}
+}
+
 func (a *App) GetDefaultDownloadPath() (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", errors.Wrap(err, "failed to get user home directory")
 	}
 	return filepath.Join(homeDir, "Downloads"), nil
+}
+
+func getFileDiff(file1, file2 string) (string, error) {
+	f1, err := os.ReadFile(file1)
+	if err != nil {
+		return "", err
+	}
+	f2, err := os.ReadFile(file2)
+	if err != nil {
+		return "", err
+	}
+
+	// For simplicity, we'll just return a basic line-by-line comparison
+	// In a real app, you might use a proper diffing library
+	diff := ""
+	lines1 := string(f1)
+	lines2 := string(f2)
+
+	if lines1 == lines2 {
+		return "Files are identical.", nil
+	}
+
+	diff += "--- a/" + filepath.Base(file1) + "\n"
+	diff += "+++ b/" + filepath.Base(file2) + "\n"
+	diff += "File content differs."
+
+	return diff, nil
 }

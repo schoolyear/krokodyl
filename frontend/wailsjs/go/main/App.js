@@ -34,6 +34,10 @@ export function ReceiveFile(arg1, arg2) {
   return window['go']['main']['App']['ReceiveFile'](arg1, arg2);
 }
 
+export function RespondToOverwrite(arg1, arg2) {
+  return window['go']['main']['App']['RespondToOverwrite'](arg1, arg2);
+}
+
 export function SelectDirectory() {
   return window['go']['main']['App']['SelectDirectory']();
 }

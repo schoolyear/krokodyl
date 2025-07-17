@@ -6,7 +6,7 @@
 
   // Wails imports
   import { EventsOn } from '../wailsjs/runtime/runtime.js';
-  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath } from '../wailsjs/go/main/App.js';
+  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = false; // Tracks if i18n is initialized
@@ -30,6 +30,7 @@
   let toastMessage = '';
   let toastType: 'success' | 'error' | 'info' = 'info';
   let toastTimeout: number;
+  let overwritePrompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; } | null = null;
 
   // Initialize i18n and then render the component
   (async () => {
@@ -72,6 +73,10 @@
         if (transfer.id.startsWith('send')) isSending = false;
         if (transfer.id.startsWith('receive')) isReceiving = false;
       }
+    });
+
+    EventsOn('transfer:overwrite', (prompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; }) => {
+      overwritePrompt = prompt;
     });
 
     return unsubscribe;
@@ -171,6 +176,13 @@
     toastTimeout = window.setTimeout(() => {
       toastMessage = '';
     }, 3000);
+  }
+
+  async function handleOverwriteResponse(response: 'yes' | 'no') {
+    if (overwritePrompt) {
+      await RespondToOverwrite(overwritePrompt.transferId, response);
+      overwritePrompt = null;
+    }
   }
 </script>
 
@@ -295,7 +307,107 @@
   </div>
 {/if}
 
+{#if overwritePrompt}
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h2>{$_('overwrite.title')}</h2>
+      <p>
+        {$_('overwrite.prompt', { values: { file: overwritePrompt.fileName }})}
+      </p>
+      <div class="file-diff">
+        <div>
+          <strong>{$_('overwrite.current_size')}:</strong>
+          <span>{formatFileSize(overwritePrompt.oldSize)}</span>
+        </div>
+        <div>
+          <strong>{$_('overwrite.new_size')}:</strong>
+          <span>{formatFileSize(overwritePrompt.newSize)}</span>
+        </div>
+      </div>
+      <pre class="diff-box">{overwritePrompt.diff}</pre>
+      <div class="modal-actions">
+        <button class="btn" on:click={() => handleOverwriteResponse('no')}>{$_('overwrite.no')}</button>
+        <button class="btn primary" on:click={() => handleOverwriteResponse('yes')}>{$_('overwrite.yes')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background-color: var(--color-bg-light);
+    padding: 1.5rem;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    width: 100%;
+    max-width: min(400px, calc(100vw - 2rem));
+    text-align: center;
+  }
+
+  .modal h2 {
+    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
+    margin-bottom: 0.75rem;
+  }
+
+  .modal p {
+    color: var(--color-text-dim);
+    margin-bottom: 1rem;
+  }
+
+  .file-diff {
+    text-align: left;
+    margin-bottom: 1.5rem;
+    background-color: var(--color-bg);
+    padding: 0.75rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-border);
+  }
+
+  .file-diff div {
+    display: flex;
+    justify-content: space-between;
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
+  }
+
+  .file-diff div:not(:last-child) {
+    margin-bottom: 0.5rem;
+  }
+
+  .diff-box {
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    padding: 0.75rem;
+    margin-top: 1rem;
+    max-height: 150px;
+    overflow-y: auto;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: monospace;
+    font-size: 0.8rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+
   /* --- Add styles for new elements --- */
   .lang-selector {
     margin-top: 0.5rem;

@@ -50,5 +50,13 @@
     "download_started": "Starting download...",
     "receive_failed": "Failed to receive file.",
     "copied_to_clipboard": "Copied to clipboard! 👍"
+  },
+  "overwrite": {
+    "title": "File Exists",
+    "prompt": "The file `{file}` already exists. Do you want to overwrite it?",
+    "current_size": "Current size",
+    "new_size": "New size",
+    "yes": "Yes",
+    "no": "No"
   }
 }
