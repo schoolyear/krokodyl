@@ -33,6 +33,20 @@ html {
   /* Allow vertical scrolling */
 }
 
+.light {
+  --color-bg: #F9FAFB;
+  --color-bg-light: #FFFFFF;
+  --color-bg-lighter: #F3F4F6;
+  --color-border: #D1D5DB;
+  --color-text: #111827;
+  --color-text-dim: #6B7280;
+  --color-primary: #3B82F6;
+  --color-primary-hover: #2563EB;
+  --color-green: #059669;
+  --color-yellow: #F59E0B;
+  --color-red: #DC2626;
+}
+
 body {
   font-family: inherit;
   overflow-x: hidden;

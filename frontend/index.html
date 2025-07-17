@@ -4,6 +4,14 @@
     <meta charset="UTF-8"/>
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
     <title>krokodyl</title>
+    <script>
+      (() => {
+        const theme = localStorage.getItem('theme');
+        if (theme === 'light') {
+          document.documentElement.classList.add('light');
+        }
+      })();
+    </script>
 </head>
 <body>
 <div id="app"></div>

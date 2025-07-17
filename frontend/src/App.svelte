@@ -3,6 +3,8 @@
   // I18n imports
   import { _, locale } from 'svelte-i18n';
   import { setupi18n, supportedLocales } from './i18n';
+  import ThemeSwitcher from './components/ThemeSwitcher.svelte';
+  import { theme } from './stores/theme';
 
   // Wails imports
   import { EventsOn } from '../wailsjs/runtime/runtime.js';
@@ -39,6 +41,7 @@
   })();
 
   onMount(() => {
+    theme.init();
     const init = async () => {
       await loadTransfers();
       try {
@@ -50,7 +53,7 @@
     init();
 
     // We must ensure 'isReady' is true before calling any functions that use translations
-    const unsubscribe = _.subscribe(async (t) => {
+    const unsubscribe = _.subscribe(async (t: any) => {
       if (typeof t !== 'function' || !isReady) return;
       await loadTransfers();
     });
@@ -191,12 +194,14 @@
     <div class="header">
       <h1>{$_('app.title')}</h1>
       <p>{$_('app.subtitle')}</p>
-      <!-- Language Selector integrated here -->
-      <select class="lang-selector" bind:value={$locale}>
-        {#each supportedLocales as l}
-          <option value={l}>{l.toUpperCase()}</option>
-        {/each}
-      </select>
+      <div class="header-controls">
+        <ThemeSwitcher />
+        <select class="lang-selector" bind:value={$locale}>
+          {#each supportedLocales as l}
+            <option value={l}>{l.toUpperCase()}</option>
+          {/each}
+        </select>
+      </div>
     </div>
 
     <div class="card">
@@ -273,7 +278,7 @@
                 {#if transfer.code}
                   <div class="code-container">
                     <span>{$_('transfer.code_label')}</span>
-                    <strong class="code" on:click={() => copyToClipboard(transfer.code)} on:keydown={(e) => { if (e.key === 'Enter') copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
+                    <strong class="code" on:click={() => {if (transfer.code) copyToClipboard(transfer.code)}} on:keydown={(e) => { if (e.key === 'Enter' && transfer.code) copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
                       {transfer.code}
                     </strong>
                   </div>
@@ -449,6 +454,16 @@
   .header {
     text-align: center;
     padding: 0;
+    position: relative;
+  }
+
+  .header-controls {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .header h1 {
