@@ -11,7 +11,7 @@
   import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite } from '../wailsjs/go/main/App.js';
 
   // --- State ---
-  let isReady = false; // Tracks if i18n is initialized
+  let isReady = $state(false); // Tracks if i18n is initialized
   
   interface FileTransfer {
     id: string;
@@ -23,16 +23,16 @@
     code?: string;
   }
 
-  let transfers: FileTransfer[] = [];
-  let receiveCode: string = '';
-  let destinationPath: string = '';
-  let activeTab: 'send' | 'receive' = 'send';
-  let isSending = false;
-  let isReceiving = false;
-  let toastMessage = '';
-  let toastType: 'success' | 'error' | 'info' = 'info';
+  let transfers: FileTransfer[] = $state([]);
+  let receiveCode: string = $state('');
+  let destinationPath: string = $state('');
+  let activeTab: 'send' | 'receive' = $state('send');
+  let isSending = $state(false);
+  let isReceiving = $state(false);
+  let toastMessage = $state('');
+  let toastType: 'success' | 'error' | 'info' = $state('info');
   let toastTimeout: number;
-  let overwritePrompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; } | null = null;
+  let overwritePrompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; } | null = $state(null);
 
   // Initialize i18n and then render the component
   (async () => {
@@ -206,10 +206,10 @@
 
     <div class="card">
       <div class="tabs">
-        <button class="tab" class:active={activeTab === 'send'} on:click={() => activeTab = 'send'}>
+        <button class="tab" class:active={activeTab === 'send'} onclick={() => activeTab = 'send'}>
           <span>📤</span> {$_('tabs.send')}
         </button>
-        <button class="tab" class:active={activeTab === 'receive'} on:click={() => activeTab = 'receive'}>
+        <button class="tab" class:active={activeTab === 'receive'} onclick={() => activeTab = 'receive'}>
           <span>📥</span> {$_('tabs.receive')}
         </button>
       </div>
@@ -219,7 +219,7 @@
           <div class="action-section">
             <h2>{$_('send.title')}</h2>
             <p>{$_('send.description')}</p>
-            <button class="btn primary" on:click={selectAndSendFile} disabled={isSending}>
+            <button class="btn primary" onclick={selectAndSendFile} disabled={isSending}>
               {#if isSending}
                 <div class="spinner"></div>
                 <span>{$_('send.button_sending')}</span>
@@ -233,13 +233,13 @@
             <h2>{$_('receive.title')}</h2>
             <p>{$_('receive.description')}</p>
             <div class="input-group">
-              <input type="text" bind:value={receiveCode} on:input={handleCodeInput} placeholder={$_('receive.placeholder_code')} />
+              <input type="text" bind:value={receiveCode} oninput={handleCodeInput} placeholder={$_('receive.placeholder_code')} />
             </div>
             <div class="input-group destination-group">
               <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
-              <button class="btn" on:click={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
+              <button class="btn" onclick={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
             </div>
-            <button class="btn primary" on:click={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
+            <button class="btn primary" onclick={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
               {#if isReceiving}
                 <div class="spinner"></div>
                 <span>{$_('receive.button_receiving')}</span>
@@ -278,7 +278,7 @@
                 {#if transfer.code}
                   <div class="code-container">
                     <span>{$_('transfer.code_label')}</span>
-                    <strong class="code" on:click={() => {if (transfer.code) copyToClipboard(transfer.code)}} on:keydown={(e) => { if (e.key === 'Enter' && transfer.code) copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
+                    <strong class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} onkeydown={(e) => { if (e.key === 'Enter' && transfer.code) copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
                       {transfer.code}
                     </strong>
                   </div>
@@ -331,8 +331,8 @@
       </div>
       <pre class="diff-box">{overwritePrompt.diff}</pre>
       <div class="modal-actions">
-        <button class="btn" on:click={() => handleOverwriteResponse('no')}>{$_('overwrite.no')}</button>
-        <button class="btn primary" on:click={() => handleOverwriteResponse('yes')}>{$_('overwrite.yes')}</button>
+        <button class="btn" onclick={() => handleOverwriteResponse('no')}>{$_('overwrite.no')}</button>
+        <button class="btn primary" onclick={() => handleOverwriteResponse('yes')}>{$_('overwrite.yes')}</button>
       </div>
     </div>
   </div>

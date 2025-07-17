@@ -6,7 +6,7 @@
   }
 </script>
 
-<button on:click={toggleTheme} class="theme-toggle">
+<button onclick={toggleTheme} class="theme-toggle">
   {#if $theme === 'light'}
     <span>☀️</span>
   {:else}
