@@ -1,0 +1,19 @@
+{
+  "app.title": "P2P File Transfer",
+  "tab.send": "Send File",
+  "tab.receive": "Receive File",
+  "send.heading": "Send a File",
+  "send.description": "Select a file to send to another peer",
+  "receive.heading": "Receive a File",
+  "receive.description": "Enter the code from the sender and select where to save the file",
+  "input.code": "Transfer Code:",
+  "input.destination": "Destination:",
+  "button.browse": "Browse",
+  "button.send": "Select & Send File",
+  "button.receive": "Receive File",
+  "transfers.heading": "File Transfers",
+  "transfers.empty": "No transfers yet",
+  "error.missing": "Please enter a code and select a destination directory",
+  "placeholder.code": "Enter transfer code",
+  "placeholder.destination": "Select destination directory"
+}

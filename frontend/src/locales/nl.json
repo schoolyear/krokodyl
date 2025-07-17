@@ -1,0 +1,19 @@
+{
+  "app.title": "P2P Bestandsoverdracht",
+  "tab.send": "Bestand Verzenden",
+  "tab.receive": "Bestand Ontvangen",
+  "send.heading": "Verzend een Bestand",
+  "send.description": "Selecteer een bestand om naar een andere peer te verzenden",
+  "receive.heading": "Ontvang een Bestand",
+  "receive.description": "Voer de code van de verzender in en selecteer waar het bestand moet worden opgeslagen",
+  "input.code": "Overdrachtscode:",
+  "input.destination": "Bestemmingsmap:",
+  "button.browse": "Bladeren",
+  "button.send": "Selecteer & Verstuur Bestand",
+  "button.receive": "Bestand Ontvangen",
+  "transfers.heading": "Bestandoverdrachten",
+  "transfers.empty": "Nog geen overdrachten",
+  "error.missing": "Voer een code in en selecteer een doelmap",
+  "placeholder.code": "Voer overdrachtscode in",
+  "placeholder.destination": "Selecteer doelmap"
+}
