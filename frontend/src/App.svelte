@@ -29,6 +29,7 @@
   let isReceiving = false;
   let toastMessage = '';
   let toastType: 'success' | 'error' | 'info' = 'info';
+  let toastTimeout: number;
 
   // Initialize i18n and then render the component
   (async () => {
@@ -127,6 +128,15 @@
     }
   }
 
+  function handleCodeInput(event: Event) {
+    const code = (event.target as HTMLInputElement).value;
+    const codeRegex = /^\d{4}-([a-zA-Z]+-){2}[a-zA-Z]+$/;
+    if (codeRegex.test(code)) {
+      receiveCode = code;
+      receiveFile();
+    }
+  }
+
   function formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -153,10 +163,12 @@
   }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-    if (toastMessage) return; // Prevent multiple toasts at once
+    if (toastTimeout) {
+      clearTimeout(toastTimeout);
+    }
     toastMessage = message;
     toastType = type;
-    setTimeout(() => {
+    toastTimeout = window.setTimeout(() => {
       toastMessage = '';
     }, 3000);
   }
@@ -204,7 +216,7 @@
             <h2>{$_('receive.title')}</h2>
             <p>{$_('receive.description')}</p>
             <div class="input-group">
-              <input type="text" bind:value={receiveCode} placeholder={$_('receive.placeholder_code')} />
+              <input type="text" bind:value={receiveCode} on:input={handleCodeInput} placeholder={$_('receive.placeholder_code')} />
             </div>
             <div class="input-group destination-group">
               <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
