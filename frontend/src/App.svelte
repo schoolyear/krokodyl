@@ -5,7 +5,8 @@
 
   interface FileTransfer {
     id: string
-    filename: string
+    name: string
+    files: string[]
     size: number
     progress: number
     status: string
@@ -16,6 +17,8 @@
   let receiveCode: string = ''
   let destinationPath: string = ''
   let activeTab: 'send' | 'receive' = 'send'
+  let isSending = false;
+  let isReceiving = false;
 
   onMount(() => {
     loadTransfers()
@@ -25,6 +28,13 @@
       if (index !== -1) {
         transfers[index] = transfer
         transfers = [...transfers]
+      } else {
+        transfers = [transfer, ...transfers];
+      }
+
+      if (transfer.status === 'completed' || transfer.status === 'error') {
+        if (transfer.id.startsWith('send')) isSending = false;
+        if (transfer.id.startsWith('receive')) isReceiving = false;
       }
     })
   })
@@ -34,14 +44,17 @@
   }
 
   async function selectAndSendFile() {
+    if (isSending) return;
     try {
       const filePath = await SelectFile()
       if (filePath) {
+        isSending = true;
         await SendFile(filePath)
         await loadTransfers()
       }
     } catch (error) {
       console.error('Error sending file:', error)
+      isSending = false;
     }
   }
 
@@ -57,17 +70,20 @@
   }
 
   async function receiveFile() {
-    if (!receiveCode.trim() || !destinationPath.trim()) {
+    if (isReceiving || !receiveCode.trim() || !destinationPath.trim()) {
+      // Maybe show a more elegant notification later
       alert('Please enter a code and select a destination directory')
       return
     }
     
     try {
+      isReceiving = true;
       await ReceiveFile(receiveCode, destinationPath)
       await loadTransfers()
       receiveCode = ''
     } catch (error) {
       console.error('Error receiving file:', error)
+      isReceiving = false;
     }
   }
 
@@ -79,172 +95,229 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  function getStatusColor(status: string): string {
+  function getStatusInfo(status: string): { color: string; icon: string } {
     switch (status) {
-      case 'completed': return '#4CAF50'
-      case 'error': return '#f44336'
-      case 'sending': case 'receiving': return '#2196F3'
-      default: return '#FF9800'
+      case 'completed': return { color: 'var(--color-green)', icon: '✅' }
+      case 'error': return { color: 'var(--color-red)', icon: '❌' }
+      case 'sending':
+      case 'receiving': 
+        return { color: 'var(--color-primary)', icon: '⏳' }
+      case 'preparing':
+        return { color: 'var(--color-yellow)', icon: '⌛' }
+      default: return { color: 'var(--color-text-dim)', icon: '❓' }
     }
+  }
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    // Maybe show a "Copied!" tooltip
   }
 </script>
 
 <main>
-  <div class="container">
-    <h1>P2P File Transfer</h1>
-    
+  <div class="header">
+    <h1>🐊 Krokodyl</h1>
+    <p>Secure, fast, and simple P2P file sharing.</p>
+  </div>
+
+  <div class="card">
     <div class="tabs">
-      <button class="tab" class:active={activeTab === 'send'} on:click={() => activeTab = 'send'}>Send File</button>
-      <button class="tab" class:active={activeTab === 'receive'} on:click={() => activeTab = 'receive'}>Receive File</button>
+      <button class="tab" class:active={activeTab === 'send'} on:click={() => activeTab = 'send'}>
+        <span>📤</span> Send
+      </button>
+      <button class="tab" class:active={activeTab === 'receive'} on:click={() => activeTab = 'receive'}>
+        <span>📥</span> Receive
+      </button>
     </div>
 
-    {#if activeTab === 'send'}
-      <div class="tab-content">
-        <h2>Send a File</h2>
-        <p>Select a file to send to another peer</p>
-        <button class="btn primary" on:click={selectAndSendFile}>Select & Send File</button>
-      </div>
-    {:else}
-      <div class="tab-content">
-        <h2>Receive a File</h2>
-        <p>Enter the code from the sender and select where to save the file</p>
-        
-        <div class="input-group">
-          <label for="code">Transfer Code:</label>
-          <input type="text" id="code" bind:value={receiveCode} placeholder="Enter transfer code" />
+    <div class="tab-content">
+      {#if activeTab === 'send'}
+        <div class="action-section">
+          <h2>Send a File</h2>
+          <p>Select a file to generate a secure transfer code.</p>
+          <button class="btn primary" on:click={selectAndSendFile} disabled={isSending}>
+            {#if isSending}
+              <div class="spinner"></div>
+              <span>Sending...</span>
+            {:else}
+              <span>📁 Select & Send File</span>
+            {/if}
+          </button>
         </div>
-
-        <div class="input-group">
-          <label for="destination">Destination:</label>
-          <div class="destination-group">
-            <input type="text" id="destination" bind:value={destinationPath} placeholder="Select destination directory" readonly />
+      {:else}
+        <div class="action-section">
+          <h2>Receive a File</h2>
+          <p>Enter a transfer code and choose where to save the file.</p>
+          <div class="input-group">
+            <input type="text" bind:value={receiveCode} placeholder="Enter transfer code..." />
+          </div>
+          <div class="input-group destination-group">
+            <input type="text" bind:value={destinationPath} placeholder="Select destination..." readonly />
             <button class="btn" on:click={selectDestinationAndReceive}>Browse</button>
           </div>
+          <button class="btn primary" on:click={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
+            {#if isReceiving}
+              <div class="spinner"></div>
+              <span>Receiving...</span>
+            {:else}
+              <span>📦 Receive File</span>
+            {/if}
+          </button>
         </div>
-
-        <button class="btn primary" on:click={receiveFile}>Receive File</button>
-      </div>
-    {/if}
-
-    <div class="transfers">
-      <h2>File Transfers</h2>
-      {#if transfers.length === 0}
-        <p class="empty">No transfers yet</p>
-      {:else}
-        {#each transfers as transfer}
-          <div class="transfer-item">
-            <div class="transfer-header">
-              <span class="filename">{transfer.filename || 'Unknown'}</span>
-              <span class="status" style="color: {getStatusColor(transfer.status)}">{transfer.status}</span>
-            </div>
-            
-            {#if transfer.size > 0}
-              <div class="file-info">
-                <span class="size">{formatFileSize(transfer.size)}</span>
-              </div>
-            {/if}
-
-            {#if transfer.code}
-              <div class="code">
-                <strong>Code:</strong> {transfer.code}
-              </div>
-            {/if}
-
-            <div class="progress-bar">
-              <div class="progress-fill" style="width: {transfer.progress}%"></div>
-            </div>
-            <span class="progress-text">{transfer.progress}%</span>
-          </div>
-        {/each}
       {/if}
     </div>
+  </div>
+
+  <div class="transfers-section">
+    <h2>History</h2>
+    {#if transfers.length === 0}
+      <div class="empty-state">
+        <p>🤷‍♀️</p>
+        <p>No transfers yet. Send or receive a file to get started!</p>
+      </div>
+    {:else}
+      <div class="transfer-list">
+        {#each transfers as transfer (transfer.id)}
+          {@const statusInfo = getStatusInfo(transfer.status)}
+          <div class="transfer-item" style="--status-color: {statusInfo.color}">
+            <div class="status-icon">{statusInfo.icon}</div>
+            <div class="transfer-details">
+              <div class="filename">{transfer.name || 'Unknown File'}</div>
+              <div class="file-list">
+                {#if transfer.files}
+                  {#each transfer.files as file}
+                    <span>{file}</span>
+                  {/each}
+                {/if}
+              </div>
+              <div class="file-size">{formatFileSize(transfer.size)}</div>
+              {#if transfer.code}
+                <div class="code-container">
+                  <span>Code:</span>
+                  <strong class="code" on:click={() => copyToClipboard(transfer.code)} on:keydown={(e) => { if (e.key === 'Enter') copyToClipboard(transfer.code); }} role="button" tabindex="0" title="Click to copy">
+                    {transfer.code}
+                  </strong>
+                </div>
+              {/if}
+            </div>
+            <div class="transfer-status">
+              <div class="status-text">{transfer.status}</div>
+              <div class="progress-bar">
+                <div class="progress-fill" style="width: {transfer.progress}%"></div>
+              </div>
+              <div class="progress-text">{transfer.progress}%</div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 </main>
 
 <style>
-  .container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px;
+  main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    gap: 2rem;
+    min-height: 100vh;
   }
 
-  h1 {
+  .header {
     text-align: center;
-    color: #333;
-    margin-bottom: 30px;
+  }
+
+  .header h1 {
+    font-size: 3rem;
+    font-weight: 800;
+    color: var(--color-text);
+  }
+
+  .header p {
+    font-size: 1.125rem;
+    color: var(--color-text-dim);
+  }
+
+  .card {
+    width: 100%;
+    max-width: 500px;
+    background-color: var(--color-bg-light);
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
   }
 
   .tabs {
     display: flex;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #ddd;
+    background-color: var(--color-bg-lighter);
   }
 
   .tab {
     flex: 1;
-    padding: 12px 20px;
+    padding: 1rem;
     background: none;
     border: none;
+    color: var(--color-text-dim);
+    font-size: 1rem;
+    font-weight: 600;
     cursor: pointer;
-    font-size: 16px;
-    color: #666;
-    transition: all 0.3s;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-bottom: 2px solid transparent;
   }
 
   .tab:hover {
-    background-color: #f5f5f5;
+    color: var(--color-text);
   }
 
   .tab.active {
-    color: #2196F3;
-    border-bottom: 2px solid #2196F3;
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
   }
 
   .tab-content {
-    padding: 20px;
-    background: #f9f9f9;
-    border-radius: 8px;
-    margin-bottom: 30px;
+    padding: 1.5rem;
+  }
+  
+  .action-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
   }
 
-  .tab-content h2 {
-    margin-top: 0;
-    color: #333;
-  }
-
-  .tab-content p {
-    color: #666;
-    margin-bottom: 20px;
+  .action-section p {
+    color: var(--color-text-dim);
+    margin-bottom: 1.5rem;
   }
 
   .input-group {
-    margin-bottom: 15px;
-  }
-
-  .input-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: 600;
-    color: #333;
+    margin-bottom: 1rem;
   }
 
   .input-group input {
     width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    box-sizing: border-box;
+    padding: 0.75rem 1rem;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius);
+    color: var(--color-text);
+    font-size: 1rem;
+    transition: var(--transition);
   }
 
   .input-group input:focus {
     outline: none;
-    border-color: #2196F3;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
   }
-
+  
   .destination-group {
     display: flex;
-    gap: 10px;
+    gap: 0.5rem;
   }
 
   .destination-group input {
@@ -252,105 +325,169 @@
   }
 
   .btn {
-    padding: 10px 20px;
+    padding: 0.75rem 1.5rem;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--border-radius);
     cursor: pointer;
-    font-size: 14px;
-    transition: all 0.3s;
-    background-color: #f0f0f0;
-    color: #333;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: var(--transition);
+    background-color: var(--color-bg-lighter);
+    color: var(--color-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .btn:hover {
-    background-color: #e0e0e0;
+    background-color: var(--color-border);
+  }
+  
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .btn.primary {
-    background-color: #2196F3;
+    background-color: var(--color-primary);
     color: white;
   }
 
-  .btn.primary:hover {
-    background-color: #1976D2;
+  .btn.primary:hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
   }
 
-  .transfers {
-    margin-top: 30px;
+  .spinner {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
   }
 
-  .transfers h2 {
-    color: #333;
-    margin-bottom: 20px;
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
-  .empty {
+  .transfers-section {
+    width: 100%;
+    max-width: 700px;
+  }
+
+  .transfers-section h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    text-align: left;
+  }
+
+  .empty-state {
+    background-color: var(--color-bg-light);
+    border: 2px dashed var(--color-border);
+    border-radius: var(--border-radius);
+    padding: 2rem;
     text-align: center;
-    color: #666;
-    font-style: italic;
+    color: var(--color-text-dim);
+  }
+  
+  .empty-state p:first-child {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+  }
+
+  .transfer-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
   .transfer-item {
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 15px;
-    margin-bottom: 10px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 1rem;
+    background-color: var(--color-bg-light);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    border-left: 4px solid var(--status-color);
   }
 
-  .transfer-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
+  .status-icon {
+    font-size: 1.5rem;
+  }
+
+  .transfer-details {
+    text-align: left;
   }
 
   .filename {
     font-weight: 600;
-    color: #333;
+    color: var(--color-text);
   }
 
-  .status {
-    font-size: 12px;
-    text-transform: uppercase;
-    font-weight: 600;
+  .file-list {
+    font-size: 0.875rem;
+    color: var(--color-text-dim);
+    display: flex;
+    flex-direction: column;
   }
 
-  .file-info {
-    margin-bottom: 8px;
+  .file-size {
+    font-size: 0.875rem;
+    color: var(--color-text-dim);
+    margin-top: 0.5rem;
   }
-
-  .size {
-    font-size: 12px;
-    color: #666;
+  
+  .code-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--color-text-dim);
   }
 
   .code {
-    margin-bottom: 10px;
-    padding: 8px;
-    background-color: #f5f5f5;
-    border-radius: 4px;
     font-family: monospace;
-    font-size: 14px;
+    background-color: var(--color-bg);
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    color: var(--color-primary);
+    cursor: pointer;
+  }
+  
+  .code:hover {
+    text-decoration: underline;
+  }
+
+  .transfer-status {
+    text-align: right;
+  }
+
+  .status-text {
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    color: var(--status-color);
   }
 
   .progress-bar {
-    width: 100%;
-    height: 8px;
-    background-color: #e0e0e0;
-    border-radius: 4px;
+    width: 120px;
+    height: 6px;
+    background-color: var(--color-bg-lighter);
+    border-radius: 3px;
     overflow: hidden;
-    margin-bottom: 5px;
+    margin: 0.5rem 0;
   }
 
   .progress-fill {
     height: 100%;
-    background-color: #2196F3;
+    background-color: var(--status-color);
     transition: width 0.3s ease;
   }
 
   .progress-text {
-    font-size: 12px;
-    color: #666;
+    font-size: 0.75rem;
+    color: var(--color-text-dim);
   }
 </style>

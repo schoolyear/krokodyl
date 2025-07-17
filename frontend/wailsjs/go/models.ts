@@ -2,7 +2,8 @@ export namespace main {
 	
 	export class FileTransfer {
 	    id: string;
-	    filename: string;
+	    name: string;
+	    files: string[];
 	    size: number;
 	    progress: number;
 	    status: string;
@@ -15,7 +16,8 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
-	        this.filename = source["filename"];
+	        this.name = source["name"];
+	        this.files = source["files"];
 	        this.size = source["size"];
 	        this.progress = source["progress"];
 	        this.status = source["status"];

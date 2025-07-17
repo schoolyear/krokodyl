@@ -15,7 +15,8 @@ import (
 
 type FileTransfer struct {
 	ID       string             `json:"id"`
-	Filename string             `json:"filename"`
+	Name     string             `json:"name"`
+	Files    []string           `json:"files"`
 	Size     int64              `json:"size"`
 	Progress int                `json:"progress"`
 	Status   FileTransferStatus `json:"status"`
@@ -62,7 +63,8 @@ func (a *App) SendFile(filePath string) (string, error) {
 
 	transfer := &FileTransfer{
 		ID:       a.getSendId(),
-		Filename: fileInfo.Name(),
+		Name:     fileInfo.Name(),
+		Files:    []string{fileInfo.Name()},
 		Size:     fileInfo.Size(),
 		Progress: 0,
 		Status:   FileTransferStatusPreparing,
@@ -116,6 +118,12 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 		transfer.Status = FileTransferStatusError
 		return
 	}
+
+	var fileNames []string
+	for _, f := range filesInfo {
+		fileNames = append(fileNames, f.Name)
+	}
+	transfer.Files = fileNames
 
 	transfer.Progress = 25
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
@@ -172,7 +180,8 @@ func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
 
 func (a *App) performReceive(transfer *FileTransfer, code, destinationPath string) {
 	transfer.Status = FileTransferStatusReceiving
-	transfer.Filename = "Receiving file..."
+	transfer.Name = "Receiving..."
+	transfer.Files = []string{}
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	currentDir, err := os.Getwd()
@@ -231,7 +240,9 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 		return
 	}
 
-	transfer.Filename = "File received successfully"
+	// We don't know the filenames when receiving with croc v10 this way
+	transfer.Name = "Completed"
+	transfer.Files = []string{"File received successfully"}
 	transfer.Status = FileTransferStatusCompleted
 	transfer.Progress = 100
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
