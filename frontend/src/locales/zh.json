@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "安全、快速、简单的P2P文件共享。"
+  },
+  "tabs": {
+    "send": "发送",
+    "receive": "接收"
+  },
+  "send": {
+    "title": "发送文件",
+    "description": "选择一个文件以生成安全传输代码。",
+    "button": "选择并发送文件",
+    "button_sending": "发送中..."
+  },
+  "receive": {
+    "title": "接收文件",
+    "description": "输入传输代码并选择保存文件的位置。",
+    "placeholder_code": "输入传输代码...",
+    "placeholder_destination": "选择目的地...",
+    "button_browse": "浏览",
+    "button_receive": "接收文件",
+    "button_receiving": "接收中..."
+  },
+  "history": {
+    "title": "历史",
+    "empty_state": "暂无传输。发送或接收文件以开始！"
+  },
+  "transfer": {
+    "unknown_file": "未知文件",
+    "code_label": "代码：",
+    "copy_prompt": "点击复制"
+  },
+  "status": {
+    "completed": "已完成",
+    "error": "错误",
+    "waiting": "等待中",
+    "sending": "发送中",
+    "receiving": "接收中",
+    "preparing": "准备中"
+  },
+  "toasts": {
+    "transfer_completed": "传输完成！🎉",
+    "transfer_failed": "传输失败。请再试一次。😢",
+    "file_selected": "已选择文件！正在生成代码...",
+    "select_file_failed": "选择文件失败。",
+    "destination_selected": "已选择目的地！",
+    "select_destination_failed": "选择目的地失败。",
+    "missing_info": "请输入代码并选择目的地。",
+    "download_started": "开始下载...",
+    "receive_failed": "接收文件失败。",
+    "copied_to_clipboard": "已复制到剪贴板！👍"
+  }
+}

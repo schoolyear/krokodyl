@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "Intercambio de archivos P2P seguro, rápido y sencillo."
+  },
+  "tabs": {
+    "send": "Enviar",
+    "receive": "Recibir"
+  },
+  "send": {
+    "title": "Enviar un archivo",
+    "description": "Seleccione un archivo para generar un código de transferencia seguro.",
+    "button": "Seleccionar y enviar archivo",
+    "button_sending": "Enviando..."
+  },
+  "receive": {
+    "title": "Recibir un archivo",
+    "description": "Introduzca un código de transferencia y elija dónde guardar el archivo.",
+    "placeholder_code": "Introducir código de transferencia...",
+    "placeholder_destination": "Seleccionar destino...",
+    "button_browse": "Navegar",
+    "button_receive": "Recibir archivo",
+    "button_receiving": "Recibiendo..."
+  },
+  "history": {
+    "title": "Historial",
+    "empty_state": "Aún no hay transferencias. ¡Envíe o reciba un archivo para empezar!"
+  },
+  "transfer": {
+    "unknown_file": "Archivo desconocido",
+    "code_label": "Código:",
+    "copy_prompt": "Haga clic para copiar"
+  },
+  "status": {
+    "completed": "completado",
+    "error": "error",
+    "waiting": "esperando",
+    "sending": "enviando",
+    "receiving": "recibiendo",
+    "preparing": "preparando"
+  },
+  "toasts": {
+    "transfer_completed": "¡Transferencia completada! 🎉",
+    "transfer_failed": "Error en la transferencia. Por favor, inténtelo de nuevo. 😢",
+    "file_selected": "¡Archivo seleccionado! Generando código...",
+    "select_file_failed": "Error al seleccionar el archivo.",
+    "destination_selected": "¡Destino seleccionado!",
+    "select_destination_failed": "Error al seleccionar el destino.",
+    "missing_info": "Por favor, introduzca un código y seleccione un destino.",
+    "download_started": "Iniciando descarga...",
+    "receive_failed": "Error al recibir el archivo.",
+    "copied_to_clipboard": "¡Copiado al portapapeles! 👍"
+  }
+}

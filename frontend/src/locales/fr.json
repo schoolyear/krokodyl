@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "Partage de fichiers P2P sécurisé, rapide et simple."
+  },
+  "tabs": {
+    "send": "Envoyer",
+    "receive": "Recevoir"
+  },
+  "send": {
+    "title": "Envoyer un fichier",
+    "description": "Sélectionnez un fichier pour générer un code de transfert sécurisé.",
+    "button": "Sélectionner et envoyer le fichier",
+    "button_sending": "Envoi en cours..."
+  },
+  "receive": {
+    "title": "Recevoir un fichier",
+    "description": "Saisissez un code de transfert et choisissez où enregistrer le fichier.",
+    "placeholder_code": "Saisir le code de transfert...",
+    "placeholder_destination": "Sélectionner la destination...",
+    "button_browse": "Parcourir",
+    "button_receive": "Recevoir le fichier",
+    "button_receiving": "Réception en cours..."
+  },
+  "history": {
+    "title": "Historique",
+    "empty_state": "Aucun transfert pour le moment. Envoyez ou recevez un fichier pour commencer !"
+  },
+  "transfer": {
+    "unknown_file": "Fichier inconnu",
+    "code_label": "Code :",
+    "copy_prompt": "Cliquez pour copier"
+  },
+  "status": {
+    "completed": "terminé",
+    "error": "erreur",
+    "waiting": "en attente",
+    "sending": "envoi",
+    "receiving": "réception",
+    "preparing": "préparation"
+  },
+  "toasts": {
+    "transfer_completed": "Transfert terminé ! 🎉",
+    "transfer_failed": "Échec du transfert. Veuillez réessayer. 😢",
+    "file_selected": "Fichier sélectionné ! Génération du code...",
+    "select_file_failed": "Échec de la sélection du fichier.",
+    "destination_selected": "Destination sélectionnée !",
+    "select_destination_failed": "Échec de la sélection de la destination.",
+    "missing_info": "Veuillez saisir un code et sélectionner une destination.",
+    "download_started": "Début du téléchargement...",
+    "receive_failed": "Échec de la réception du fichier.",
+    "copied_to_clipboard": "Copié dans le presse-papiers ! 👍"
+  }
+}
