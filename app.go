@@ -55,7 +55,7 @@ func (a *App) startup(ctx context.Context) {
 func (a *App) SendFile(filePath string) (string, error) {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
-		return "", err
+		return "", errors.Wrapf(err, "failed to stat file: %s", filePath)
 	}
 
 	transfer := &FileTransfer{
