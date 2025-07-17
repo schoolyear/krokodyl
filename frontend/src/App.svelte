@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { EventsOn } from '../wailsjs/runtime/runtime.js'
-  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory } from '../wailsjs/go/main/App.js'
+  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath } from '../wailsjs/go/main/App.js'
 
   interface FileTransfer {
     id: string
@@ -22,8 +22,13 @@
   let toastMessage = '';
   let toastType: 'success' | 'error' | 'info' = 'info';
 
-  onMount(() => {
+  onMount(async () => {
     loadTransfers()
+    try {
+      destinationPath = await GetDefaultDownloadPath();
+    } catch (error) {
+      console.error("Could not get default download path", error)
+    }
     
     EventsOn('transfer:updated', (transfer: FileTransfer) => {
       const index = transfers.findIndex(t => t.id === transfer.id)

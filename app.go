@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -277,4 +278,12 @@ func (a *App) SelectDirectory() (string, error) {
 	}
 
 	return selection, nil
+}
+
+func (a *App) GetDefaultDownloadPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", errors.Wrap(err, "failed to get user home directory")
+	}
+	return filepath.Join(homeDir, "Downloads"), nil
 }
