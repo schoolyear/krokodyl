@@ -32,7 +32,8 @@ const createThemeStore = () => {
     init: () => {
       if (typeof window === 'undefined') return;
       const storedTheme = localStorage.getItem('theme') as Theme | null;
-      const initialTheme = storedTheme || 'dark';
+      const systemTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      const initialTheme = storedTheme || systemTheme;
       applyTheme(initialTheme);
       set(initialTheme);
     }
