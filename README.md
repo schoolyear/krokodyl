@@ -1,3 +1,5 @@
+<img src="build/appicon.png" alt="krokodyl icon" width="128"/>
+
 ## Project Overview
 
 This is a Wails application called "krokodyl" that provides a desktop GUI for peer-to-peer file transfers using the croc protocol. The application is built with:
