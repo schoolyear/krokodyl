@@ -29,20 +29,23 @@ html {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family-sans);
-  overflow: hidden;
+  overflow-x: hidden;
+  /* Allow vertical scrolling */
 }
 
 body {
   font-family: inherit;
-  overflow: hidden;
+  overflow-x: hidden;
+  /* Allow vertical scrolling */
   margin: 0;
   padding: 0;
+  min-height: 100vh;
 }
 
 #app {
-  height: 100vh;
+  min-height: 100vh;
   text-align: center;
-  overflow: hidden;
+  /* Allow content to scroll */
 }
 
 @font-face {
