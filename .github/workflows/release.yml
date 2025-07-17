@@ -57,21 +57,13 @@ jobs:
           cd frontend
           npm install
           
-      - name: Build application
-        run: |
-          if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            if [ -n "${{ matrix.build_flags }}" ]; then
-              wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
-            else
-              wails build -platform ${{ matrix.platform }}
-            fi
-          else
-            if [ -n "${{ matrix.build_flags }}" ]; then
-              wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
-            else
-              wails build -platform ${{ matrix.platform }} -o krokodyl${{ matrix.ext }}
-            fi
-          fi
+      - name: Build application (macOS)
+        if: matrix.os == 'macos-latest'
+        run: wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
+        
+      - name: Build application (Linux/Windows)
+        if: matrix.os != 'macos-latest'
+        run: wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
         
       - name: Prepare macOS artifact
         if: matrix.os == 'macos-latest'
