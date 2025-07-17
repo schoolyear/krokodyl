@@ -61,7 +61,7 @@ func (a *App) SendFile(filePath string) (string, error) {
 		return "", errors.Wrapf(err, "failed to stat file: %s", filePath)
 	}
 
-	transfer := &FileTransfer{
+	transfer := FileTransfer{
 		ID:       a.getSendId(),
 		Name:     fileInfo.Name(),
 		Files:    []string{fileInfo.Name()},
@@ -70,20 +70,23 @@ func (a *App) SendFile(filePath string) (string, error) {
 		Status:   FileTransferStatusPreparing,
 	}
 
-	go a.performSend(transfer, filePath)
+	a.Lock()
+	a.transfers = append([]FileTransfer{transfer}, a.transfers...)
+	a.Unlock()
+
+	go a.performSend(&a.transfers[0], filePath)
 
 	return transfer.ID, nil
 }
 
 func (a *App) performSend(transfer *FileTransfer, filePath string) {
 	transfer.Status = FileTransferStatusSending
-
+	transfer.Code = utils.GetRandomName()
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
-	generatedCode := utils.GetRandomName()
 	options := croc.Options{
 		IsSender:       true,
-		SharedSecret:   generatedCode,
+		SharedSecret:   transfer.Code,
 		Debug:          false,
 		NoPrompt:       true,
 		RelayAddress:   "croc.schollz.com:9009",
@@ -136,7 +139,6 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 		return
 	}
 
-	transfer.Code = crocClient.Options.SharedSecret
 	transfer.Status = FileTransferStatusCompleted
 	transfer.Progress = 100
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
@@ -166,14 +168,20 @@ func (a *App) Len() int {
 }
 
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
-	transfer := &FileTransfer{
+	transfer := FileTransfer{
 		ID:       a.getReceiveId(),
 		Code:     code,
 		Progress: 0,
 		Status:   FileTransferStatusPreparing,
+		Name:     "Preparing to receive...",
+		Files:    []string{},
 	}
 
-	go a.performReceive(transfer, code, destinationPath)
+	a.Lock()
+	a.transfers = append([]FileTransfer{transfer}, a.transfers...)
+	a.Unlock()
+
+	go a.performReceive(&a.transfers[0], code, destinationPath)
 
 	return transfer.ID, nil
 }
@@ -181,7 +189,6 @@ func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
 func (a *App) performReceive(transfer *FileTransfer, code, destinationPath string) {
 	transfer.Status = FileTransferStatusReceiving
 	transfer.Name = "Receiving..."
-	transfer.Files = []string{}
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	currentDir, err := os.Getwd()

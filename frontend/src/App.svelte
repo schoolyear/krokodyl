@@ -19,6 +19,7 @@
   let activeTab: 'send' | 'receive' = 'send'
   let isSending = false;
   let isReceiving = false;
+  let toastMessage = '';
 
   onMount(() => {
     loadTransfers()
@@ -50,7 +51,6 @@
       if (filePath) {
         isSending = true;
         await SendFile(filePath)
-        await loadTransfers()
       }
     } catch (error) {
       console.error('Error sending file:', error)
@@ -79,7 +79,6 @@
     try {
       isReceiving = true;
       await ReceiveFile(receiveCode, destinationPath)
-      await loadTransfers()
       receiveCode = ''
     } catch (error) {
       console.error('Error receiving file:', error)
@@ -110,7 +109,15 @@
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    // Maybe show a "Copied!" tooltip
+    showToast('Copied to clipboard! 👍');
+  }
+
+  function showToast(message: string) {
+    if (toastMessage) return; // Prevent multiple toasts at once
+    toastMessage = message;
+    setTimeout(() => {
+      toastMessage = '';
+    }, 3000);
   }
 </script>
 
@@ -212,6 +219,12 @@
       </div>
     {/if}
   </div>
+
+  {#if toastMessage}
+    <div class="toast">
+      {toastMessage}
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -489,5 +502,38 @@
   .progress-text {
     font-size: 0.75rem;
     color: var(--color-text-dim);
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--color-primary);
+    color: white;
+    padding: 1rem 2rem;
+    border-radius: var(--border-radius);
+    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    z-index: 100;
+    animation: fade-in-out 3s ease-in-out forwards;
+  }
+
+  @keyframes fade-in-out {
+    0% {
+      opacity: 0;
+      transform: translate(-50%, 20px);
+    }
+    10% {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    90% {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, 20px);
+    }
   }
 </style>
