@@ -21,6 +21,7 @@
   let isReceiving = false;
   let toastMessage = '';
   let toastType: 'success' | 'error' | 'info' = 'info';
+  let toastTimeout: number;
 
   onMount(async () => {
     loadTransfers()
@@ -102,6 +103,15 @@
     }
   }
 
+  function handleCodeInput(event: Event) {
+    const code = (event.target as HTMLInputElement).value;
+    const codeRegex = /^\d{4}-([a-zA-Z]+-){2}[a-zA-Z]+$/;
+    if (codeRegex.test(code)) {
+      receiveCode = code;
+      receiveFile();
+    }
+  }
+
   function formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
@@ -131,10 +141,12 @@
   }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-    if (toastMessage) return; // Prevent multiple toasts at once
+    if (toastTimeout) {
+      clearTimeout(toastTimeout);
+    }
     toastMessage = message;
     toastType = type;
-    setTimeout(() => {
+    toastTimeout = window.setTimeout(() => {
       toastMessage = '';
     }, 3000);
   }
@@ -175,7 +187,7 @@
           <h2>Receive a File</h2>
           <p>Enter a transfer code and choose where to save the file.</p>
           <div class="input-group">
-            <input type="text" bind:value={receiveCode} placeholder="Enter transfer code..." />
+            <input type="text" bind:value={receiveCode} on:input={handleCodeInput} placeholder="Enter transfer code..." />
           </div>
           <div class="input-group destination-group">
             <input type="text" bind:value={destinationPath} placeholder="Select destination..." readonly />

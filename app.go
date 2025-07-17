@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"github.com/schollz/croc/v10/src/croc"
@@ -240,9 +241,21 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 	transfer.Progress = 50
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
-	err = crocClient.Receive()
-	if err != nil {
-		logrus.WithError(err).Error("error receiving files")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- crocClient.Receive()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logrus.WithError(err).Error("error receiving files")
+			transfer.Status = FileTransferStatusError
+			runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+			return
+		}
+	case <-time.After(30 * time.Second):
+		logrus.Error("timeout while waiting for sender")
 		transfer.Status = FileTransferStatusError
 		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
