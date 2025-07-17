@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "Veilig, snel en eenvoudig P2P bestanden delen."
+  },
+  "tabs": {
+    "send": "Versturen",
+    "receive": "Ontvangen"
+  },
+  "send": {
+    "title": "Verstuur een Bestand",
+    "description": "Selecteer een bestand om een veilige overdrachtscode te genereren.",
+    "button": "Selecteer & Verstuur Bestand",
+    "button_sending": "Bezig met verzenden..."
+  },
+  "receive": {
+    "title": "Ontvang een Bestand",
+    "description": "Voer een overdrachtscode in en kies waar je het bestand wilt opslaan.",
+    "placeholder_code": "Voer overdrachtscode in...",
+    "placeholder_destination": "Selecteer bestemming...",
+    "button_browse": "Bladeren",
+    "button_receive": "Bestand Ontvangen",
+    "button_receiving": "Bezig met ontvangen..."
+  },
+  "history": {
+    "title": "Geschiedenis",
+    "empty_state": "Nog geen overdrachten. Verzend of ontvang een bestand om te beginnen!"
+  },
+  "transfer": {
+    "unknown_file": "Onbekend Bestand",
+    "code_label": "Code:",
+    "copy_prompt": "Klik om te kopiëren"
+  },
+  "status": {
+    "completed": "voltooid",
+    "error": "fout",
+    "waiting": "wachten",
+    "sending": "verzenden",
+    "receiving": "ontvangen",
+    "preparing": "voorbereiden"
+  },
+  "toasts": {
+    "transfer_completed": "Overdracht voltooid! 🎉",
+    "transfer_failed": "Overdracht mislukt. Probeer het opnieuw. 😢",
+    "file_selected": "Bestand geselecteerd! Code wordt gegenereerd...",
+    "select_file_failed": "Bestand selecteren mislukt.",
+    "destination_selected": "Bestemming geselecteerd!",
+    "select_destination_failed": "Bestemming selecteren mislukt.",
+    "missing_info": "Voer een code in en selecteer een bestemming.",
+    "download_started": "Download wordt gestart...",
+    "receive_failed": "Bestand ontvangen mislukt.",
+    "copied_to_clipboard": "Gekopieerd naar klembord! 👍"
+  }
+}
