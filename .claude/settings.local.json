@@ -7,7 +7,8 @@
       "WebFetch(domain:github.com)",
       "Bash(go mod:*)",
       "Bash(find:*)",
-      "Bash(wails build:*)"
+      "Bash(wails build:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }
