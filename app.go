@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync/atomic"
+	"sync"
 
 	"github.com/pkg/errors"
 	"github.com/schollz/croc/v10/src/croc"
@@ -25,9 +25,10 @@ type FileTransfer struct {
 // App struct
 type (
 	App struct {
-		ctx              context.Context
-		numFilesSent     int64
-		numFilesReceived int64
+		ctx       context.Context
+		transfers []FileTransfer
+
+		sync.RWMutex
 	}
 
 	FileTransferStatus string
@@ -50,6 +51,7 @@ const (
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.transfers = make([]FileTransfer, 0)
 }
 
 func (a *App) SendFile(filePath string) (string, error) {
@@ -133,11 +135,26 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 }
 
 func (a *App) getSendId() string {
-	return fmt.Sprintf("send-%d", atomic.AddInt64(&a.numFilesSent, 1))
+	return fmt.Sprintf("send-%d", a.Len())
 }
 
 func (a *App) getReceiveId() string {
-	return fmt.Sprintf("receive-%d", atomic.AddInt64(&a.numFilesReceived, 1))
+	return fmt.Sprintf("receive-%d", a.Len())
+}
+
+func (a *App) GetTransfers() []FileTransfer {
+	a.RLock()
+	defer a.RUnlock()
+
+	return a.transfers
+}
+
+// Len returns the number of transfers in history
+func (a *App) Len() int {
+	a.RLock()
+	defer a.RUnlock()
+
+	return len(a.transfers)
 }
 
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {

@@ -6,6 +6,26 @@ export function GetTransfers() {
   return window['go']['main']['App']['GetTransfers']();
 }
 
+export function Len() {
+  return window['go']['main']['App']['Len']();
+}
+
+export function Lock() {
+  return window['go']['main']['App']['Lock']();
+}
+
+export function RLock() {
+  return window['go']['main']['App']['RLock']();
+}
+
+export function RLocker() {
+  return window['go']['main']['App']['RLocker']();
+}
+
+export function RUnlock() {
+  return window['go']['main']['App']['RUnlock']();
+}
+
 export function ReceiveFile(arg1, arg2) {
   return window['go']['main']['App']['ReceiveFile'](arg1, arg2);
 }
@@ -20,4 +40,16 @@ export function SelectFile() {
 
 export function SendFile(arg1) {
   return window['go']['main']['App']['SendFile'](arg1);
+}
+
+export function TryLock() {
+  return window['go']['main']['App']['TryLock']();
+}
+
+export function TryRLock() {
+  return window['go']['main']['App']['TryRLock']();
+}
+
+export function Unlock() {
+  return window['go']['main']['App']['Unlock']();
 }
