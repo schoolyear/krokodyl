@@ -1,128 +1,145 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
-  import { EventsOn } from '../wailsjs/runtime/runtime.js'
-  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory } from '../wailsjs/go/main/App.js'
+  import { onMount } from 'svelte';
+  // I18n imports
+  import { _, locale } from 'svelte-i18n';
+  import { setupi18n, supportedLocales } from './i18n';
+
+  // Wails imports
+  import { EventsOn } from '../wailsjs/runtime/runtime.js';
+  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory } from '../wailsjs/go/main/App.js';
+
+  // --- State ---
+  let isReady = false; // Tracks if i18n is initialized
 
   interface FileTransfer {
-    id: string
-    name: string
-    files: string[]
-    size: number
-    progress: number
-    status: string
-    code?: string
+    id: string;
+    name: string;
+    files: string[];
+    size: number;
+    progress: number;
+    status: string;
+    code?: string;
   }
 
-  let transfers: FileTransfer[] = []
-  let receiveCode: string = ''
-  let destinationPath: string = ''
-  let activeTab: 'send' | 'receive' = 'send'
+  let transfers: FileTransfer[] = [];
+  let receiveCode: string = '';
+  let destinationPath: string = '';
+  let activeTab: 'send' | 'receive' = 'send';
   let isSending = false;
   let isReceiving = false;
   let toastMessage = '';
   let toastType: 'success' | 'error' | 'info' = 'info';
 
+  // Initialize i18n and then render the component
+  (async () => {
+    await setupi18n();
+    isReady = true;
+  })();
+
   onMount(() => {
-    loadTransfers()
-    
+    // We must ensure 'isReady' is true before calling any functions that use translations
+    const unsubscribe = _.subscribe(async (t) => {
+      if (typeof t !== 'function' || !isReady) return;
+      await loadTransfers();
+    });
+
     EventsOn('transfer:updated', (transfer: FileTransfer) => {
-      const index = transfers.findIndex(t => t.id === transfer.id)
+      const index = transfers.findIndex(t => t.id === transfer.id);
       if (index !== -1) {
-        transfers[index] = transfer
-        transfers = [...transfers]
+        transfers[index] = transfer;
+        transfers = [...transfers];
       } else {
         transfers = [transfer, ...transfers];
       }
 
       if (transfer.status === 'completed') {
-        showToast('Transfer completed! 🎉', 'success');
+        showToast($_('toasts.transfer_completed'), 'success');
         if (transfer.id.startsWith('send')) isSending = false;
         if (transfer.id.startsWith('receive')) isReceiving = false;
       } else if (transfer.status === 'error') {
-        showToast('Transfer failed. Please try again. 😢', 'error');
+        showToast($_('toasts.transfer_failed'), 'error');
         if (transfer.id.startsWith('send')) isSending = false;
         if (transfer.id.startsWith('receive')) isReceiving = false;
       }
-    })
-  })
+    });
+
+    return unsubscribe;
+  });
 
   async function loadTransfers() {
-    transfers = await GetTransfers()
+    transfers = await GetTransfers();
   }
 
   async function selectAndSendFile() {
     if (isSending) return;
     try {
-      const filePath = await SelectFile()
+      const filePath = await SelectFile();
       if (filePath) {
-        showToast('File selected! Generating code...', 'info');
+        showToast($_('toasts.file_selected'), 'info');
         isSending = true;
-        await SendFile(filePath)
+        await SendFile(filePath);
       }
     } catch (error) {
-      console.error('Error sending file:', error)
-      showToast('Failed to select file.', 'error');
+      console.error('Error sending file:', error);
+      showToast($_('toasts.select_file_failed'), 'error');
       isSending = false;
     }
   }
 
   async function selectDestinationAndReceive() {
     try {
-      const path = await SelectDirectory()
+      const path = await SelectDirectory();
       if (path) {
-        destinationPath = path
-        showToast('Destination selected!', 'info');
+        destinationPath = path;
+        showToast($_('toasts.destination_selected'), 'info');
       }
     } catch (error) {
-      console.error('Error selecting directory:', error)
-      showToast('Failed to select destination.', 'error');
+      console.error('Error selecting directory:', error);
+      showToast($_('toasts.select_destination_failed'), 'error');
     }
   }
 
   async function receiveFile() {
     if (isReceiving || !receiveCode.trim() || !destinationPath.trim()) {
-      showToast('Please enter a code and select a destination.', 'error');
-      return
+      showToast($_('toasts.missing_info'), 'error');
+      return;
     }
-    
+
     try {
-      showToast('Starting download...', 'info');
+      showToast($_('toasts.download_started'), 'info');
       isReceiving = true;
-      await ReceiveFile(receiveCode, destinationPath)
-      receiveCode = ''
+      await ReceiveFile(receiveCode, destinationPath);
+      receiveCode = '';
     } catch (error) {
-      console.error('Error receiving file:', error)
-      showToast('Failed to receive file.', 'error');
+      console.error('Error receiving file:', error);
+      showToast($_('toasts.receive_failed'), 'error');
       isReceiving = false;
     }
   }
 
   function formatFileSize(bytes: number): string {
-    if (bytes === 0) return '0 Bytes'
-    const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
   function getStatusInfo(status: string): { color: string; icon: string } {
     switch (status) {
-      case 'completed': return { color: 'var(--color-green)', icon: '✅' }
-      case 'error': return { color: 'var(--color-red)', icon: '❌' }
-      case 'waiting':
-        return { color: 'var(--color-yellow)', icon: '⌛' }
+      case 'completed': return { color: 'var(--color-green)', icon: '✅' };
+      case 'error': return { color: 'var(--color-red)', icon: '❌' };
+      case 'waiting': return { color: 'var(--color-yellow)', icon: '⌛' };
       case 'sending':
-      case 'receiving':
-        return { color: 'var(--color-primary)', icon: '⏳' }
-      case 'preparing':
-        return { color: 'var(--color-yellow)', icon: '⌛' }
-      default: return { color: 'var(--color-text-dim)', icon: '❓' }
+      case 'receiving': return { color: 'var(--color-primary)', icon: '⏳' };
+      case 'preparing': return { color: 'var(--color-yellow)', icon: '⌛' };
+      default: return { color: 'var(--color-text-dim)', icon: '❓' };
     }
   }
 
   function copyToClipboard(text: string) {
     navigator.clipboard.writeText(text);
-    showToast('Copied to clipboard! 👍', 'success');
+    showToast($_('toasts.copied_to_clipboard'), 'success');
   }
 
   function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
@@ -135,105 +152,120 @@
   }
 </script>
 
-<main>
-  <div class="header">
-    <h1>🐊 Krokodyl</h1>
-    <p>Secure, fast, and simple P2P file sharing.</p>
-  </div>
-
-  <div class="card">
-    <div class="tabs">
-      <button class="tab" class:active={activeTab === 'send'} on:click={() => activeTab = 'send'}>
-        <span>📤</span> Send
-      </button>
-      <button class="tab" class:active={activeTab === 'receive'} on:click={() => activeTab = 'receive'}>
-        <span>📥</span> Receive
-      </button>
+{#if isReady}
+  <main>
+    <div class="header">
+      <h1>{$_('app.title')}</h1>
+      <p>{$_('app.subtitle')}</p>
+      <!-- Language Selector integrated here -->
+      <select class="lang-selector" bind:value={$locale}>
+        {#each supportedLocales as l}
+          <option value={l}>{l.toUpperCase()}</option>
+        {/each}
+      </select>
     </div>
 
-    <div class="tab-content">
-      {#if activeTab === 'send'}
-        <div class="action-section">
-          <h2>Send a File</h2>
-          <p>Select a file to generate a secure transfer code.</p>
-          <button class="btn primary" on:click={selectAndSendFile} disabled={isSending}>
-            {#if isSending}
-              <div class="spinner"></div>
-              <span>Sending...</span>
-            {:else}
-              <span>📁 Select & Send File</span>
-            {/if}
-          </button>
+    <div class="card">
+      <div class="tabs">
+        <button class="tab" class:active={activeTab === 'send'} on:click={() => activeTab = 'send'}>
+          <span>📤</span> {$_('tabs.send')}
+        </button>
+        <button class="tab" class:active={activeTab === 'receive'} on:click={() => activeTab = 'receive'}>
+          <span>📥</span> {$_('tabs.receive')}
+        </button>
+      </div>
+
+      <div class="tab-content">
+        {#if activeTab === 'send'}
+          <div class="action-section">
+            <h2>{$_('send.title')}</h2>
+            <p>{$_('send.description')}</p>
+            <button class="btn primary" on:click={selectAndSendFile} disabled={isSending}>
+              {#if isSending}
+                <div class="spinner"></div>
+                <span>{$_('send.button_sending')}</span>
+              {:else}
+                <span>📁 {$_('send.button')}</span>
+              {/if}
+            </button>
+          </div>
+        {:else}
+          <div class="action-section">
+            <h2>{$_('receive.title')}</h2>
+            <p>{$_('receive.description')}</p>
+            <div class="input-group">
+              <input type="text" bind:value={receiveCode} placeholder={$_('receive.placeholder_code')} />
+            </div>
+            <div class="input-group destination-group">
+              <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
+              <button class="btn" on:click={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
+            </div>
+            <button class="btn primary" on:click={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
+              {#if isReceiving}
+                <div class="spinner"></div>
+                <span>{$_('receive.button_receiving')}</span>
+              {:else}
+                <span>📦 {$_('receive.button_receive')}</span>
+              {/if}
+            </button>
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <div class="transfers-section">
+      <h2>{$_('history.title')}</h2>
+      {#if transfers.length === 0}
+        <div class="empty-state">
+          <p>🤷‍♀️</p>
+          <p>{$_('history.empty_state')}</p>
         </div>
       {:else}
-        <div class="action-section">
-          <h2>Receive a File</h2>
-          <p>Enter a transfer code and choose where to save the file.</p>
-          <div class="input-group">
-            <input type="text" bind:value={receiveCode} placeholder="Enter transfer code..." />
-          </div>
-          <div class="input-group destination-group">
-            <input type="text" bind:value={destinationPath} placeholder="Select destination..." readonly />
-            <button class="btn" on:click={selectDestinationAndReceive}>Browse</button>
-          </div>
-          <button class="btn primary" on:click={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
-            {#if isReceiving}
-              <div class="spinner"></div>
-              <span>Receiving...</span>
-            {:else}
-              <span>📦 Receive File</span>
-            {/if}
-          </button>
+        <div class="transfer-list">
+          {#each transfers as transfer (transfer.id)}
+            {@const statusInfo = getStatusInfo(transfer.status)}
+            <div class="transfer-item" style="--status-color: {statusInfo.color}">
+              <div class="status-icon">{statusInfo.icon}</div>
+              <div class="transfer-details">
+                <div class="filename">{transfer.name || $_('transfer.unknown_file')}</div>
+                <div class="file-list">
+                  {#if transfer.files}
+                    {#each transfer.files as file}
+                      <span>{file}</span>
+                    {/each}
+                  {/if}
+                </div>
+                <div class="file-size">{formatFileSize(transfer.size)}</div>
+                {#if transfer.code}
+                  <div class="code-container">
+                    <span>{$_('transfer.code_label')}</span>
+                    <strong class="code" on:click={() => copyToClipboard(transfer.code)} on:keydown={(e) => { if (e.key === 'Enter') copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
+                      {transfer.code}
+                    </strong>
+                  </div>
+                {/if}
+              </div>
+              <div class="transfer-status">
+                <div class="status-text">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
+                <div class="progress-bar">
+                  <div class="progress-fill" style="width: {transfer.progress}%"></div>
+                </div>
+                <div class="progress-text">{transfer.progress}%</div>
+              </div>
+            </div>
+          {/each}
         </div>
       {/if}
     </div>
+  </main>
+{:else}
+  <!-- You can place a more sophisticated loading spinner here -->
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading application...</p>
   </div>
+{/if}
 
-  <div class="transfers-section">
-    <h2>History</h2>
-    {#if transfers.length === 0}
-      <div class="empty-state">
-        <p>🤷‍♀️</p>
-        <p>No transfers yet. Send or receive a file to get started!</p>
-      </div>
-    {:else}
-      <div class="transfer-list">
-        {#each transfers as transfer (transfer.id)}
-          {@const statusInfo = getStatusInfo(transfer.status)}
-          <div class="transfer-item" style="--status-color: {statusInfo.color}">
-            <div class="status-icon">{statusInfo.icon}</div>
-            <div class="transfer-details">
-              <div class="filename">{transfer.name || 'Unknown File'}</div>
-              <div class="file-list">
-                {#if transfer.files}
-                  {#each transfer.files as file}
-                    <span>{file}</span>
-                  {/each}
-                {/if}
-              </div>
-              <div class="file-size">{formatFileSize(transfer.size)}</div>
-              {#if transfer.code}
-                <div class="code-container">
-                  <span>Code:</span>
-                  <strong class="code" on:click={() => copyToClipboard(transfer.code)} on:keydown={(e) => { if (e.key === 'Enter') copyToClipboard(transfer.code); }} role="button" tabindex="0" title="Click to copy">
-                    {transfer.code}
-                  </strong>
-                </div>
-              {/if}
-            </div>
-            <div class="transfer-status">
-              <div class="status-text">{transfer.status}</div>
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: {transfer.progress}%"></div>
-              </div>
-              <div class="progress-text">{transfer.progress}%</div>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
-</main>
 
 {#if toastMessage}
   <div class="toast" class:success={toastType === 'success'} class:error={toastType === 'error'}>
@@ -242,6 +274,31 @@
 {/if}
 
 <style>
+  /* --- Add styles for new elements --- */
+  .lang-selector {
+    margin-top: 1rem;
+    padding: 0.5rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-border);
+    background-color: var(--color-bg-light);
+    color: var(--color-text);
+  }
+
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 1rem;
+  }
+
+  .loading-state .spinner {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  /* --- All previous styles remain the same --- */
   main {
     display: flex;
     flex-direction: column;
@@ -310,7 +367,7 @@
   .tab-content {
     padding: 1.5rem;
   }
-  
+
   .action-section h2 {
     font-size: 1.5rem;
     margin-bottom: 0.5rem;
@@ -341,7 +398,7 @@
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
   }
-  
+
   .destination-group {
     display: flex;
     gap: 0.5rem;
@@ -369,7 +426,7 @@
   .btn:hover {
     background-color: var(--color-border);
   }
-  
+
   .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -416,7 +473,7 @@
     text-align: center;
     color: var(--color-text-dim);
   }
-  
+
   .empty-state p:first-child {
     font-size: 3rem;
     margin-bottom: 1rem;
@@ -464,7 +521,7 @@
     color: var(--color-text-dim);
     margin-top: 0.5rem;
   }
-  
+
   .code-container {
     display: flex;
     align-items: center;
@@ -482,7 +539,7 @@
     color: var(--color-primary);
     cursor: pointer;
   }
-  
+
   .code:hover {
     text-decoration: underline;
   }

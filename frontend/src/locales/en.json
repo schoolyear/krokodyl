@@ -1,19 +1,54 @@
 {
-  "app.title": "P2P File Transfer",
-  "tab.send": "Send File",
-  "tab.receive": "Receive File",
-  "send.heading": "Send a File",
-  "send.description": "Select a file to send to another peer",
-  "receive.heading": "Receive a File",
-  "receive.description": "Enter the code from the sender and select where to save the file",
-  "input.code": "Transfer Code:",
-  "input.destination": "Destination:",
-  "button.browse": "Browse",
-  "button.send": "Select & Send File",
-  "button.receive": "Receive File",
-  "transfers.heading": "File Transfers",
-  "transfers.empty": "No transfers yet",
-  "error.missing": "Please enter a code and select a destination directory",
-  "placeholder.code": "Enter transfer code",
-  "placeholder.destination": "Select destination directory"
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "Secure, fast, and simple P2P file sharing."
+  },
+  "tabs": {
+    "send": "Send",
+    "receive": "Receive"
+  },
+  "send": {
+    "title": "Send a File",
+    "description": "Select a file to generate a secure transfer code.",
+    "button": "Select & Send File",
+    "button_sending": "Sending..."
+  },
+  "receive": {
+    "title": "Receive a File",
+    "description": "Enter a transfer code and choose where to save the file.",
+    "placeholder_code": "Enter transfer code...",
+    "placeholder_destination": "Select destination...",
+    "button_browse": "Browse",
+    "button_receive": "Receive File",
+    "button_receiving": "Receiving..."
+  },
+  "history": {
+    "title": "History",
+    "empty_state": "No transfers yet. Send or receive a file to get started!"
+  },
+  "transfer": {
+    "unknown_file": "Unknown File",
+    "code_label": "Code:",
+    "copy_prompt": "Click to copy"
+  },
+  "status": {
+    "completed": "completed",
+    "error": "error",
+    "waiting": "waiting",
+    "sending": "sending",
+    "receiving": "receiving",
+    "preparing": "preparing"
+  },
+  "toasts": {
+    "transfer_completed": "Transfer completed! 🎉",
+    "transfer_failed": "Transfer failed. Please try again. 😢",
+    "file_selected": "File selected! Generating code...",
+    "select_file_failed": "Failed to select file.",
+    "destination_selected": "Destination selected!",
+    "select_destination_failed": "Failed to select destination.",
+    "missing_info": "Please enter a code and select a destination.",
+    "download_started": "Starting download...",
+    "receive_failed": "Failed to receive file.",
+    "copied_to_clipboard": "Copied to clipboard! 👍"
+  }
 }
