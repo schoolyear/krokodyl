@@ -59,10 +59,18 @@ jobs:
           
       - name: Build application
         run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            if [ -n "${{ matrix.build_flags }}" ]; then
+              wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
+            else
+              wails build -platform ${{ matrix.platform }}
+            fi
           else
-            wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
+            if [ -n "${{ matrix.build_flags }}" ]; then
+              wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
+            else
+              wails build -platform ${{ matrix.platform }} -o krokodyl${{ matrix.ext }}
+            fi
           fi
         
       - name: Prepare macOS artifact
@@ -97,9 +105,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: |
-            build/bin/krokodyl-macos.tar.gz
-            build/bin/krokodyl-macos
+          path: build/bin/krokodyl-macos*
           retention-days: 1
 
   release:
