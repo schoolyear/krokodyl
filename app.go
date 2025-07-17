@@ -4,35 +4,47 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
+	"sync/atomic"
 
+	"github.com/pkg/errors"
 	"github.com/schollz/croc/v10/src/croc"
 	"github.com/schollz/croc/v10/src/utils"
+	"github.com/sirupsen/logrus"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type FileTransfer struct {
-	ID       string `json:"id"`
-	Filename string `json:"filename"`
-	Size     int64  `json:"size"`
-	Progress int    `json:"progress"`
-	Status   string `json:"status"`
-	Code     string `json:"code,omitempty"`
+	ID       string             `json:"id"`
+	Filename string             `json:"filename"`
+	Size     int64              `json:"size"`
+	Progress int                `json:"progress"`
+	Status   FileTransferStatus `json:"status"`
+	Code     string             `json:"code,omitempty"`
 }
 
 // App struct
-type App struct {
-	ctx       context.Context
-	transfers map[string]*FileTransfer
-	mu        sync.RWMutex
-}
-
-// NewApp creates a new App application struct
-func NewApp() *App {
-	return &App{
-		transfers: make(map[string]*FileTransfer),
+type (
+	App struct {
+		ctx              context.Context
+		numFilesSent     int64
+		numFilesReceived int64
 	}
-}
+
+	FileTransferStatus string
+)
+
+const (
+	FileTransferStatusPreparing FileTransferStatus = "preparing"
+	FileTransferStatusSending                      = "sending"
+	FileTransferStatusReceiving                    = "receiving"
+
+	FileTransferStatusError     = "error"
+	FileTransferStatusCompleted = "completed"
+)
+
+const (
+	TransferEventUpdated string = "transfer:updated"
+)
 
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
@@ -47,16 +59,12 @@ func (a *App) SendFile(filePath string) (string, error) {
 	}
 
 	transfer := &FileTransfer{
-		ID:       fmt.Sprintf("send-%d", len(a.transfers)),
+		ID:       a.getSendId(),
 		Filename: fileInfo.Name(),
 		Size:     fileInfo.Size(),
 		Progress: 0,
-		Status:   "preparing",
+		Status:   FileTransferStatusPreparing,
 	}
-
-	a.mu.Lock()
-	a.transfers[transfer.ID] = transfer
-	a.mu.Unlock()
 
 	go a.performSend(transfer, filePath)
 
@@ -64,33 +72,33 @@ func (a *App) SendFile(filePath string) (string, error) {
 }
 
 func (a *App) performSend(transfer *FileTransfer, filePath string) {
-	transfer.Status = "sending"
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+	transfer.Status = FileTransferStatusSending
+
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	generatedCode := utils.GetRandomName()
-	
 	options := croc.Options{
-		IsSender:         true,
-		SharedSecret:     generatedCode,
-		Debug:            false,
-		NoPrompt:         true,
-		RelayAddress:     "croc.schollz.com:9009",
-		RelayPorts:       []string{"9009", "9010", "9011", "9012", "9013"},
-		RelayPassword:    "pass123",
-		NoMultiplexing:   false,
-		DisableLocal:     false,
-		OnlyLocal:        false,
-		IgnoreStdin:      true,
-		Overwrite:        true,
-		Curve:            "p256",
-		HashAlgorithm:    "xxhash",
+		IsSender:       true,
+		SharedSecret:   generatedCode,
+		Debug:          false,
+		NoPrompt:       true,
+		RelayAddress:   "croc.schollz.com:9009",
+		RelayPorts:     []string{"9009", "9010", "9011", "9012", "9013"},
+		RelayPassword:  "pass123",
+		NoMultiplexing: false,
+		DisableLocal:   false,
+		OnlyLocal:      false,
+		IgnoreStdin:    true,
+		Overwrite:      true,
+		Curve:          "p256",
+		HashAlgorithm:  "xxhash",
 	}
 
 	crocClient, err := croc.New(options)
 	if err != nil {
-		fmt.Printf("Error creating croc client: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error while creating croc client")
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		transfer.Status = FileTransferStatusError
 		return
 	}
 
@@ -101,40 +109,44 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 		[]string{},
 	)
 	if err != nil {
-		fmt.Printf("Error getting files info: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error while getting files info")
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		transfer.Status = FileTransferStatusError
 		return
 	}
 
 	transfer.Progress = 25
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	err = crocClient.Send(filesInfo, emptyFolders, totalFolders)
 	if err != nil {
-		fmt.Printf("Error sending files: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error sending files")
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+		transfer.Status = FileTransferStatusError
 		return
 	}
 
 	transfer.Code = crocClient.Options.SharedSecret
-	transfer.Status = "completed"
+	transfer.Status = FileTransferStatusCompleted
 	transfer.Progress = 100
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+}
+
+func (a *App) getSendId() string {
+	return fmt.Sprintf("send-%d", atomic.AddInt64(&a.numFilesSent, 1))
+}
+
+func (a *App) getReceiveId() string {
+	return fmt.Sprintf("receive-%d", atomic.AddInt64(&a.numFilesReceived, 1))
 }
 
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
 	transfer := &FileTransfer{
-		ID:       fmt.Sprintf("receive-%d", len(a.transfers)),
+		ID:       a.getReceiveId(),
 		Code:     code,
 		Progress: 0,
-		Status:   "preparing",
+		Status:   FileTransferStatusPreparing,
 	}
-
-	a.mu.Lock()
-	a.transfers[transfer.ID] = transfer
-	a.mu.Unlock()
 
 	go a.performReceive(transfer, code, destinationPath)
 
@@ -142,23 +154,23 @@ func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
 }
 
 func (a *App) performReceive(transfer *FileTransfer, code, destinationPath string) {
-	transfer.Status = "receiving"
+	transfer.Status = FileTransferStatusReceiving
 	transfer.Filename = "Receiving file..."
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	currentDir, err := os.Getwd()
 	if err != nil {
-		fmt.Printf("Error getting current directory: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error getting current directory")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
 	err = os.Chdir(destinationPath)
 	if err != nil {
-		fmt.Printf("Error changing directory to %s: %v\n", destinationPath, err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Errorf("error changing directory to %s", destinationPath)
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
@@ -167,56 +179,45 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 	}()
 
 	options := croc.Options{
-		IsSender:         false,
-		SharedSecret:     code,
-		Debug:            false,
-		NoPrompt:         true,
-		RelayAddress:     "croc.schollz.com:9009",
-		RelayPorts:       []string{"9009", "9010", "9011", "9012", "9013"},
-		RelayPassword:    "pass123",
-		NoMultiplexing:   false,
-		DisableLocal:     false,
-		OnlyLocal:        false,
-		IgnoreStdin:      true,
-		Overwrite:        true,
-		Curve:            "p256",
-		HashAlgorithm:    "xxhash",
+		IsSender:       false,
+		SharedSecret:   code,
+		Debug:          false,
+		NoPrompt:       true,
+		RelayAddress:   "croc.schollz.com:9009",
+		RelayPorts:     []string{"9009", "9010", "9011", "9012", "9013"},
+		RelayPassword:  "pass123",
+		NoMultiplexing: false,
+		DisableLocal:   false,
+		OnlyLocal:      false,
+		IgnoreStdin:    true,
+		Overwrite:      true,
+		Curve:          "p256",
+		HashAlgorithm:  "xxhash",
 	}
 
 	crocClient, err := croc.New(options)
 	if err != nil {
-		fmt.Printf("Error creating croc client: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error creating croc client")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
 	transfer.Progress = 50
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	err = crocClient.Receive()
 	if err != nil {
-		fmt.Printf("Error receiving files: %v\n", err)
-		transfer.Status = "error"
-		runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
+		logrus.WithError(err).Error("error receiving files")
+		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
 	transfer.Filename = "File received successfully"
-	transfer.Status = "completed"
+	transfer.Status = FileTransferStatusCompleted
 	transfer.Progress = 100
-	runtime.EventsEmit(a.ctx, "transfer:updated", transfer)
-}
-
-func (a *App) GetTransfers() []*FileTransfer {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-
-	transfers := make([]*FileTransfer, 0, len(a.transfers))
-	for _, transfer := range a.transfers {
-		transfers = append(transfers, transfer)
-	}
-	return transfers
+	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 }
 
 func (a *App) SelectFile() (string, error) {
@@ -231,7 +232,7 @@ func (a *App) SelectFile() (string, error) {
 	})
 
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to open file dialog")
 	}
 
 	return selection, nil
@@ -243,7 +244,7 @@ func (a *App) SelectDirectory() (string, error) {
 	})
 
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(err, "failed to open directory dialog")
 	}
 
 	return selection, nil

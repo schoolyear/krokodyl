@@ -5,7 +5,9 @@ go 1.24.0
 toolchain go1.24.5
 
 require (
+	github.com/pkg/errors v0.9.1
 	github.com/schollz/croc/v10 v10.2.2
+	github.com/sirupsen/logrus v1.9.3
 	github.com/wailsapp/wails/v2 v2.10.2
 )
 
@@ -31,7 +33,6 @@ require (
 	github.com/minio/highwayhash v1.0.3 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/samber/lo v1.49.1 // indirect
