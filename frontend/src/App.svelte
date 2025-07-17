@@ -330,8 +330,7 @@
     padding: 0.75rem;
     gap: 1rem;
     min-height: 100vh;
-    height: 100vh;
-    overflow: hidden;
+    /* Remove fixed height and overflow hidden to allow scrolling */
     transition: var(--transition);
   }
 
@@ -505,8 +504,9 @@
     justify-self: center;
     display: flex;
     flex-direction: column;
-    min-height: 0; /* Allow shrinking */
-    overflow: hidden;
+    /* Allow section to grow/shrink naturally */
+    min-height: 200px;
+    margin-bottom: 1rem; /* Add bottom margin for mobile scrolling */
   }
 
   .transfers-section h2 {
@@ -539,9 +539,9 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    overflow-y: auto;
-    min-height: 0;
-    flex: 1;
+    /* Remove overflow hidden to allow natural content flow */
+    max-height: 400px; /* Limit height on larger screens */
+    overflow-y: auto; /* Allow scrolling within transfer list if needed */
   }
 
   .transfer-item {
@@ -728,6 +728,10 @@
       bottom: 1rem;
       padding: 0.75rem 1rem;
     }
+    
+    .transfer-list {
+      max-height: none; /* Remove height limit on mobile */
+    }
   }
 
   @media (max-width: 360px) {
@@ -747,8 +751,12 @@
     }
   }
 
-  /* Ensure buttons are always visible */
+  /* Ensure content is accessible on very short screens */
   @media (max-height: 600px) {
+    main {
+      gap: 0.5rem;
+    }
+    
     .header h1 {
       font-size: clamp(1.5rem, 4vw, 2rem);
       margin-bottom: 0.125rem;
@@ -780,6 +788,72 @@
     .empty-state p:first-child {
       font-size: clamp(1.25rem, 5vw, 2rem);
       margin-bottom: 0.25rem;
+    }
+    
+    .tab-content {
+      padding: 0.5rem;
+    }
+    
+    .input-group {
+      margin-bottom: 0.5rem;
+    }
+    
+    .transfers-section {
+      min-height: 150px;
+    }
+  }
+
+  /* Extra small height optimization */
+  @media (max-height: 400px) {
+    main {
+      gap: 0.25rem;
+    }
+    
+    .header {
+      padding: 0;
+    }
+    
+    .header h1 {
+      font-size: clamp(1.25rem, 4vw, 1.75rem);
+      margin-bottom: 0;
+    }
+    
+    .header p {
+      font-size: clamp(0.7rem, 2vw, 0.8rem);
+      margin-bottom: 0;
+    }
+    
+    .lang-selector {
+      margin-top: 0.125rem;
+      padding: 0.25rem;
+      font-size: 0.75rem;
+    }
+    
+    .tab-content {
+      padding: 0.375rem;
+    }
+    
+    .action-section h2 {
+      font-size: clamp(0.9rem, 3vw, 1.1rem);
+      margin-bottom: 0.125rem;
+    }
+    
+    .action-section p {
+      font-size: clamp(0.7rem, 2vw, 0.75rem);
+      margin-bottom: 0.375rem;
+    }
+    
+    .input-group {
+      margin-bottom: 0.375rem;
+    }
+    
+    .transfers-section h2 {
+      font-size: clamp(0.9rem, 3vw, 1.1rem);
+      margin-bottom: 0.375rem;
+    }
+    
+    .transfers-section {
+      min-height: 100px;
     }
   }
 </style>
