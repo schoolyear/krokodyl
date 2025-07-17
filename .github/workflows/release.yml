@@ -58,18 +58,30 @@ jobs:
           npm install
           
       - name: Build application
-        run: wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
+        run: |
+          if [ "${{ matrix.os }}" == "macos-latest" ]; then
+            wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
+          else
+            wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
+          fi
         
       - name: Prepare macOS artifact
         if: matrix.os == 'macos-latest'
         run: |
+          echo "Contents of build/bin directory:"
+          ls -la build/bin/
+          
           if [ -d "build/bin/krokodyl.app" ]; then
-            # Create a proper macOS app bundle for distribution
+            echo "Found .app bundle, creating tar.gz"
             tar -czf krokodyl-macos.tar.gz -C build/bin krokodyl.app
             mv krokodyl-macos.tar.gz build/bin/krokodyl-macos.tar.gz
-          else
-            # Fallback if no app bundle is created
+          elif [ -f "build/bin/krokodyl" ]; then
+            echo "Found krokodyl binary, renaming to krokodyl-macos"
             mv build/bin/krokodyl build/bin/krokodyl-macos
+          else
+            echo "No expected output found, listing all files:"
+            find build/ -type f -name "*krokodyl*" || echo "No krokodyl files found"
+            exit 1
           fi
         
       - name: Upload artifact (Linux/Windows)
