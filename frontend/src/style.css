@@ -29,15 +29,20 @@ html {
   background-color: var(--color-bg);
   color: var(--color-text);
   font-family: var(--font-family-sans);
+  overflow: hidden;
 }
 
 body {
   font-family: inherit;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }
 
 #app {
   height: 100vh;
   text-align: center;
+  overflow: hidden;
 }
 
 @font-face {

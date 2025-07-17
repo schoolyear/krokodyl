@@ -328,6 +328,10 @@
     padding: 2rem;
     gap: 2rem;
     min-height: 100vh;
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: var(--transition);
   }
 
   .header {
