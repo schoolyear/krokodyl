@@ -1,4 +1,4 @@
-module p2p-ui
+module krokodyl
 
 go 1.24.0
 
