@@ -6,11 +6,8 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  build-linux:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,14 +35,119 @@ jobs:
           cd frontend
           npm install
           
-      - name: Build application
-        run: wails build -tags webkit2_41
+      - name: Build Linux application
+        run: wails build -tags webkit2_41 -o krokodyl
         
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: krokodyl-linux
+          path: build/bin/krokodyl
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm install
+          
+      - name: Build Windows application
+        run: wails build -platform windows/amd64 -o krokodyl.exe
+        
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: krokodyl-windows
+          path: build/bin/krokodyl.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+        
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm install
+          
+      - name: Build macOS application
+        run: wails build -platform darwin/amd64 -o krokodyl
+        
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: krokodyl-macos
+          path: build/bin/krokodyl
+
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: krokodyl-linux
+          path: ./artifacts/linux/
+          
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: krokodyl-windows
+          path: ./artifacts/windows/
+          
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: krokodyl-macos
+          path: ./artifacts/macos/
+          
+      - name: Rename artifacts
+        run: |
+          mv artifacts/linux/krokodyl artifacts/krokodyl-linux
+          mv artifacts/windows/krokodyl.exe artifacts/krokodyl-windows.exe
+          mv artifacts/macos/krokodyl artifacts/krokodyl-macos
+          
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            build/bin/p2p-ui
+            artifacts/krokodyl-linux
+            artifacts/krokodyl-windows.exe
+            artifacts/krokodyl-macos
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
