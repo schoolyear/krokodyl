@@ -37,6 +37,7 @@ type (
 
 const (
 	FileTransferStatusPreparing FileTransferStatus = "preparing"
+	FileTransferStatusWaiting   FileTransferStatus = "waiting"
 	FileTransferStatusSending   FileTransferStatus = "sending"
 	FileTransferStatusReceiving FileTransferStatus = "receiving"
 
@@ -80,8 +81,8 @@ func (a *App) SendFile(filePath string) (string, error) {
 }
 
 func (a *App) performSend(transfer *FileTransfer, filePath string) {
-	transfer.Status = FileTransferStatusSending
 	transfer.Code = utils.GetRandomName()
+	transfer.Status = FileTransferStatusWaiting
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	options := croc.Options{
@@ -104,8 +105,8 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 	crocClient, err := croc.New(options)
 	if err != nil {
 		logrus.WithError(err).Error("error while creating croc client")
-		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
@@ -117,8 +118,8 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 	)
 	if err != nil {
 		logrus.WithError(err).Error("error while getting files info")
-		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 
@@ -127,15 +128,14 @@ func (a *App) performSend(transfer *FileTransfer, filePath string) {
 		fileNames = append(fileNames, f.Name)
 	}
 	transfer.Files = fileNames
-
-	transfer.Progress = 25
+	transfer.Progress = 0 // Set progress to 0% for the "waiting" state
 	runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 
 	err = crocClient.Send(filesInfo, emptyFolders, totalFolders)
 	if err != nil {
 		logrus.WithError(err).Error("error sending files")
-		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		transfer.Status = FileTransferStatusError
+		runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
 		return
 	}
 

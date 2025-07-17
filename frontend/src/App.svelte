@@ -98,8 +98,10 @@
     switch (status) {
       case 'completed': return { color: 'var(--color-green)', icon: '✅' }
       case 'error': return { color: 'var(--color-red)', icon: '❌' }
+      case 'waiting':
+        return { color: 'var(--color-yellow)', icon: '⌛' }
       case 'sending':
-      case 'receiving': 
+      case 'receiving':
         return { color: 'var(--color-primary)', icon: '⏳' }
       case 'preparing':
         return { color: 'var(--color-yellow)', icon: '⌛' }
