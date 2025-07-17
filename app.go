@@ -258,12 +258,6 @@ func (a *App) performReceive(transfer *FileTransfer, code, destinationPath strin
 func (a *App) SelectFile() (string, error) {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select file to send",
-		Filters: []runtime.FileFilter{
-			{
-				DisplayName: "All Files",
-				Pattern:     "*",
-			},
-		},
 	})
 
 	if err != nil {
