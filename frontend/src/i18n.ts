@@ -1,12 +1,13 @@
 import { register, init, getLocaleFromNavigator } from 'svelte-i18n';
 
-const SUPPORTED = ['en', 'nl', 'fr', 'es', 'zh'];
+const SUPPORTED = ['en', 'nl', 'fr', 'es', 'hu', 'zh'];
 
 // Register the loaders for your locales
 register('en', () => import('./locales/en.json'));
 register('nl', () => import('./locales/nl.json'));
 register('fr', () => import('./locales/fr.json'));
 register('es', () => import('./locales/es.json'));
+register('hu', () => import('./locales/hu.json'));
 register('zh', () => import('./locales/zh.json'));
 
 // Create and export an async function to initialize i18n
