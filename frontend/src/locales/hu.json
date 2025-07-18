@@ -1,0 +1,62 @@
+{
+  "app": {
+    "title": "🐊 Krokodyl",
+    "subtitle": "Biztonságos, gyors és egyszerű P2P fájlmegosztás."
+  },
+  "tabs": {
+    "send": "Küldés",
+    "receive": "Fogadás"
+  },
+  "send": {
+    "title": "Fájl küldése",
+    "description": "Válassz egy fájlt a biztonságos átvitelkód generálásához.",
+    "button": "Fájl kiválasztása és küldése",
+    "button_sending": "Küldés..."
+  },
+  "receive": {
+    "title": "Fájl fogadása",
+    "description": "Add meg az átvitelkódot és válaszd ki, hová mentse a fájlt.",
+    "placeholder_code": "Add meg az átvitelkódot...",
+    "placeholder_destination": "Úti cél kiválasztása...",
+    "button_browse": "Tallózás",
+    "button_receive": "Fájl fogadása",
+    "button_receiving": "Fogadás..."
+  },
+  "history": {
+    "title": "Előzmények",
+    "empty_state": "Még nincs átvitel. Küldj vagy fogadj egy fájlt a kezdéshez!"
+  },
+  "transfer": {
+    "unknown_file": "Ismeretlen fájl",
+    "code_label": "Kód:",
+    "copy_prompt": "Kattints a másoláshoz"
+  },
+  "status": {
+    "completed": "befejezve",
+    "error": "hiba",
+    "waiting": "várakozik",
+    "sending": "küldés",
+    "receiving": "fogadás",
+    "preparing": "előkészítés"
+  },
+  "toasts": {
+    "transfer_completed": "Átvitel befejezve! 🎉",
+    "transfer_failed": "Az átvitel sikertelen. Kérlek, próbáld újra. 😢",
+    "file_selected": "Fájl kiválasztva! Kód generálása...",
+    "select_file_failed": "Nem sikerült kiválasztani a fájlt.",
+    "destination_selected": "Cél kiválasztva!",
+    "select_destination_failed": "Nem sikerült kiválasztani a célt.",
+    "missing_info": "Kérlek, add meg a kódot és válaszd ki a célt.",
+    "download_started": "Letöltés indítása...",
+    "receive_failed": "Nem sikerült fogadni a fájlt.",
+    "copied_to_clipboard": "Vágólapra másolva! 👍"
+  },
+  "overwrite": {
+    "title": "Fájl már létezik",
+    "prompt": "A(z) `{file}` fájl már létezik. Felülírod?",
+    "current_size": "Jelenlegi méret",
+    "new_size": "Új méret",
+    "yes": "Igen",
+    "no": "Nem"
+  }
+}
