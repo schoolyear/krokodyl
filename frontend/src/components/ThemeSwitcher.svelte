@@ -19,7 +19,8 @@
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 1.5rem;
-    padding: 0.5rem;
+    font-size: 1.25rem;
+    padding: 0.375rem;
+    margin-right: 0.125rem;
   }
 </style>

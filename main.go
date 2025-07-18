@@ -21,7 +21,7 @@ func main() {
 		Title:         "krokodyl",
 		Width:         800,
 		Height:        600,
-		MinWidth:      400,
+		MinWidth:      520,
 		MinHeight:     500,
 		MaxWidth:      1000,
 		MaxHeight:     800,
