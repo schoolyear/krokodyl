@@ -1,0 +1,597 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>krokodyl: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">krokodyl/app.go (0.0%)</option>
+				
+				<option value="file1">krokodyl/main.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "context"
+        "fmt"
+        "os"
+        "path/filepath"
+        "sync"
+
+        "github.com/pkg/errors"
+        "github.com/schollz/croc/v10/src/croc"
+        "github.com/schollz/croc/v10/src/utils"
+        "github.com/sirupsen/logrus"
+        "github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+type FileTransfer struct {
+        ID       string             `json:"id"`
+        Name     string             `json:"name"`
+        Files    []string           `json:"files"`
+        Size     int64              `json:"size"`
+        Progress int                `json:"progress"`
+        Status   FileTransferStatus `json:"status"`
+        Code     string             `json:"code,omitempty"`
+}
+
+type OverwritePrompt struct {
+        TransferID string `json:"transferId"`
+        FileName   string `json:"fileName"`
+        OldSize    int64  `json:"oldSize"`
+        NewSize    int64  `json:"newSize"`
+        Diff       string `json:"diff"`
+}
+
+// App struct
+type (
+        App struct {
+                ctx                context.Context
+                transfers          []FileTransfer
+                overwriteResponses map[string]chan string
+
+                sync.RWMutex
+        }
+
+        FileTransferStatus string
+)
+
+const (
+        FileTransferStatusPreparing FileTransferStatus = "preparing"
+        FileTransferStatusWaiting   FileTransferStatus = "waiting"
+        FileTransferStatusSending   FileTransferStatus = "sending"
+        FileTransferStatusReceiving FileTransferStatus = "receiving"
+
+        FileTransferStatusError     FileTransferStatus = "error"
+        FileTransferStatusCompleted FileTransferStatus = "completed"
+)
+
+const (
+        TransferEventUpdated   string = "transfer:updated"
+        TransferEventOverwrite string = "transfer:overwrite"
+)
+
+// startup is called when the app starts. The context is saved
+// so we can call the runtime methods
+func (a *App) startup(ctx context.Context) <span class="cov0" title="0">{
+        a.ctx = ctx
+        a.transfers = make([]FileTransfer, 0)
+        a.overwriteResponses = make(map[string]chan string)
+}</span>
+
+func (a *App) SendFile(filePath string) (string, error) <span class="cov0" title="0">{
+        fileInfo, err := os.Stat(filePath)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrapf(err, "failed to stat file: %s", filePath)
+        }</span>
+
+        <span class="cov0" title="0">transfer := FileTransfer{
+                ID:       a.getSendId(),
+                Name:     fileInfo.Name(),
+                Files:    []string{fileInfo.Name()},
+                Size:     fileInfo.Size(),
+                Progress: 0,
+                Status:   FileTransferStatusPreparing,
+        }
+
+        a.Lock()
+        a.transfers = append([]FileTransfer{transfer}, a.transfers...)
+        a.Unlock()
+
+        go a.performSend(&amp;a.transfers[0], filePath)
+
+        return transfer.ID, nil</span>
+}
+
+func (a *App) performSend(transfer *FileTransfer, filePath string) <span class="cov0" title="0">{
+        transfer.Code = utils.GetRandomName()
+        transfer.Status = FileTransferStatusWaiting
+        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+
+        options := croc.Options{
+                IsSender:       true,
+                SharedSecret:   transfer.Code,
+                Debug:          false,
+                NoPrompt:       true,
+                RelayAddress:   "croc.schollz.com:9009",
+                RelayPorts:     []string{"9009", "9010", "9011", "9012", "9013"},
+                RelayPassword:  "pass123",
+                NoMultiplexing: false,
+                DisableLocal:   false,
+                OnlyLocal:      false,
+                IgnoreStdin:    true,
+                Overwrite:      true,
+                Curve:          "p256",
+                HashAlgorithm:  "xxhash",
+        }
+
+        crocClient, err := croc.New(options)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error while creating croc client")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">filesInfo, emptyFolders, totalFolders, err := croc.GetFilesInfo(
+                []string{filePath},
+                false,
+                false,
+                []string{},
+        )
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error while getting files info")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">var fileNames []string
+        for _, f := range filesInfo </span><span class="cov0" title="0">{
+                fileNames = append(fileNames, f.Name)
+        }</span>
+        <span class="cov0" title="0">transfer.Files = fileNames
+        transfer.Progress = 0 // Set progress to 0% for the "waiting" state
+        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+
+        err = crocClient.Send(filesInfo, emptyFolders, totalFolders)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error sending files")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">transfer.Status = FileTransferStatusCompleted
+        transfer.Progress = 100
+        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)</span>
+}
+
+func (a *App) getSendId() string <span class="cov0" title="0">{
+        return fmt.Sprintf("send-%d", a.Len())
+}</span>
+
+func (a *App) getReceiveId() string <span class="cov0" title="0">{
+        return fmt.Sprintf("receive-%d", a.Len())
+}</span>
+
+func (a *App) GetTransfers() []FileTransfer <span class="cov0" title="0">{
+        a.RLock()
+        defer a.RUnlock()
+
+        return a.transfers
+}</span>
+
+// Len returns the number of transfers in history
+func (a *App) Len() int <span class="cov0" title="0">{
+        a.RLock()
+        defer a.RUnlock()
+
+        return len(a.transfers)
+}</span>
+
+func (a *App) ReceiveFile(code, destinationPath string) (string, error) <span class="cov0" title="0">{
+        transfer := FileTransfer{
+                ID:       a.getReceiveId(),
+                Code:     code,
+                Progress: 0,
+                Status:   FileTransferStatusPreparing,
+                Name:     "Preparing to receive...",
+                Files:    []string{},
+        }
+
+        a.Lock()
+        a.transfers = append([]FileTransfer{transfer}, a.transfers...)
+        a.Unlock()
+
+        go a.performReceive(&amp;a.transfers[0], code, destinationPath)
+
+        return transfer.ID, nil
+}</span>
+
+func (a *App) performReceive(transfer *FileTransfer, code, destinationPath string) <span class="cov0" title="0">{
+        transfer.Status = FileTransferStatusReceiving
+        transfer.Name = "Receiving..."
+        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+
+        currentDir, err := os.Getwd()
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error getting current directory")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">err = os.Chdir(destinationPath)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Errorf("error changing directory to %s", destinationPath)
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+        <span class="cov0" title="0">defer func() </span><span class="cov0" title="0">{
+                os.Chdir(currentDir)
+        }</span>()
+
+        <span class="cov0" title="0">options := croc.Options{
+                IsSender:       false,
+                SharedSecret:   code,
+                Debug:          false,
+                NoPrompt:       true,
+                RelayAddress:   "croc.schollz.com:9009",
+                RelayPorts:     []string{"9009", "9010", "9011", "9012", "9013"},
+                RelayPassword:  "pass123",
+                NoMultiplexing: false,
+                DisableLocal:   false,
+                OnlyLocal:      false,
+                IgnoreStdin:    true,
+                Overwrite:      true,
+                Curve:          "p256",
+                HashAlgorithm:  "xxhash",
+        }
+
+        tempDir, err := os.MkdirTemp("", "krokodyl-")
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error creating temp directory")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+        <span class="cov0" title="0">defer os.RemoveAll(tempDir)
+
+        // Change to the temporary directory to receive the file
+        if err := os.Chdir(tempDir); err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Errorf("error changing to temp directory %s", tempDir)
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">crocClient, err := croc.New(options)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error creating croc client")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">if err := crocClient.Receive(); err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error receiving files")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        // Now that the file is in the temp directory, get its info
+        <span class="cov0" title="0">receivedFileInfos, err := listFiles(tempDir)
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Error("error listing files in temp directory")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">var receivedFiles []os.FileInfo
+        for _, info := range receivedFileInfos </span><span class="cov0" title="0">{
+                receivedFiles = append(receivedFiles, info)
+        }</span>
+
+        <span class="cov0" title="0">if len(receivedFiles) == 0 </span><span class="cov0" title="0">{
+                logrus.Error("no files received")
+                transfer.Status = FileTransferStatusError
+                runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                return
+        }</span>
+
+        <span class="cov0" title="0">var fileNames []string
+        var totalSize int64
+        for _, fileInfo := range receivedFiles </span><span class="cov0" title="0">{
+                sourcePath := filepath.Join(tempDir, fileInfo.Name())
+                destPath := filepath.Join(destinationPath, fileInfo.Name())
+
+                // Check if the file already exists
+                if existingInfo, err := os.Stat(destPath); err == nil </span><span class="cov0" title="0">{
+                        // File exists, prompt for overwrite
+                        responseChan := make(chan string)
+                        a.Lock()
+                        a.overwriteResponses[transfer.ID] = responseChan
+                        a.Unlock()
+
+                        diff, err := getFileDiff(destPath, sourcePath)
+                        if err != nil </span><span class="cov0" title="0">{
+                                logrus.WithError(err).Warnf("could not get file diff")
+                                diff = "Could not generate file difference."
+                        }</span>
+
+                        <span class="cov0" title="0">runtime.EventsEmit(a.ctx, TransferEventOverwrite, OverwritePrompt{
+                                TransferID: transfer.ID,
+                                FileName:   fileInfo.Name(),
+                                OldSize:    existingInfo.Size(),
+                                NewSize:    fileInfo.Size(),
+                                Diff:       diff,
+                        })
+
+                        // Wait for the user's response
+                        response := &lt;-responseChan
+                        if response != "yes" </span><span class="cov0" title="0">{
+                                // User chose not to overwrite, so we skip this file
+                                logrus.Infof("User chose not to overwrite %s", fileInfo.Name())
+                                continue</span> // Move to the next file
+                        }
+                }
+
+                // Ensure the destination directory exists
+                <span class="cov0" title="0">if err := os.MkdirAll(filepath.Dir(destPath), os.ModePerm); err != nil </span><span class="cov0" title="0">{
+                        logrus.WithError(err).Errorf("failed to create destination directory for %s", destPath)
+                        transfer.Status = FileTransferStatusError
+                        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                        return
+                }</span>
+
+                <span class="cov0" title="0">if err := os.Rename(sourcePath, destPath); err != nil </span><span class="cov0" title="0">{
+                        logrus.WithError(err).Errorf("failed to move file from %s to %s", sourcePath, destPath)
+                        transfer.Status = FileTransferStatusError
+                        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)
+                        return
+                }</span>
+
+                <span class="cov0" title="0">fileNames = append(fileNames, fileInfo.Name())
+                totalSize += fileInfo.Size()</span>
+        }
+
+        <span class="cov0" title="0">if len(fileNames) &gt; 0 </span><span class="cov0" title="0">{
+                transfer.Name = fileNames[0]
+                if len(fileNames) &gt; 1 </span><span class="cov0" title="0">{
+                        transfer.Name = fmt.Sprintf("%s and %d more", fileNames[0], len(fileNames)-1)
+                }</span>
+        } else<span class="cov0" title="0"> {
+                transfer.Name = "File received"
+        }</span>
+
+        <span class="cov0" title="0">transfer.Files = fileNames
+        transfer.Size = totalSize
+        transfer.Status = FileTransferStatusCompleted
+        transfer.Progress = 100
+        runtime.EventsEmit(a.ctx, TransferEventUpdated, transfer)</span>
+}
+
+func listFiles(dir string) (map[string]os.FileInfo, error) <span class="cov0" title="0">{
+        files := make(map[string]os.FileInfo)
+        err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error </span><span class="cov0" title="0">{
+                if err != nil </span><span class="cov0" title="0">{
+                        return err
+                }</span>
+                <span class="cov0" title="0">if !info.IsDir() </span><span class="cov0" title="0">{
+                        files[path] = info
+                }</span>
+                <span class="cov0" title="0">return nil</span>
+        })
+        <span class="cov0" title="0">return files, err</span>
+}
+
+func (a *App) SelectFile() (string, error) <span class="cov0" title="0">{
+        selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+                Title: "Select file to send",
+        })
+
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrap(err, "failed to open file dialog")
+        }</span>
+
+        <span class="cov0" title="0">return selection, nil</span>
+}
+
+func (a *App) SelectDirectory() (string, error) <span class="cov0" title="0">{
+        selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+                Title: "Select destination directory",
+        })
+
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrap(err, "failed to open directory dialog")
+        }</span>
+
+        <span class="cov0" title="0">return selection, nil</span>
+}
+
+func (a *App) RespondToOverwrite(transferID string, response string) <span class="cov0" title="0">{
+        a.RLock()
+        responseChan, ok := a.overwriteResponses[transferID]
+        a.RUnlock()
+
+        if ok </span><span class="cov0" title="0">{
+                responseChan &lt;- response
+                a.Lock()
+                delete(a.overwriteResponses, transferID)
+                a.Unlock()
+        }</span>
+}
+
+func (a *App) GetDefaultDownloadPath() (string, error) <span class="cov0" title="0">{
+        homeDir, err := os.UserHomeDir()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrap(err, "failed to get user home directory")
+        }</span>
+        <span class="cov0" title="0">return filepath.Join(homeDir, "Downloads"), nil</span>
+}
+
+func getFileDiff(file1, file2 string) (string, error) <span class="cov0" title="0">{
+        f1, err := os.ReadFile(file1)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+        <span class="cov0" title="0">f2, err := os.ReadFile(file2)
+        if err != nil </span><span class="cov0" title="0">{
+                return "", err
+        }</span>
+
+        // For simplicity, we'll just return a basic line-by-line comparison
+        // In a real app, you might use a proper diffing library
+        <span class="cov0" title="0">diff := ""
+        lines1 := string(f1)
+        lines2 := string(f2)
+
+        if lines1 == lines2 </span><span class="cov0" title="0">{
+                return "Files are identical.", nil
+        }</span>
+
+        <span class="cov0" title="0">diff += "--- a/" + filepath.Base(file1) + "\n"
+        diff += "+++ b/" + filepath.Base(file2) + "\n"
+        diff += "File content differs."
+
+        return diff, nil</span>
+}
+</pre>
+		
+		<pre class="file" id="file1" style="display: none">package main
+
+import (
+        "embed"
+
+        "github.com/sirupsen/logrus"
+        "github.com/wailsapp/wails/v2"
+        "github.com/wailsapp/wails/v2/pkg/options"
+        "github.com/wailsapp/wails/v2/pkg/options/assetserver"
+)
+
+//go:embed all:frontend/dist
+var assets embed.FS
+
+func main() <span class="cov0" title="0">{
+        // Create an instance of the app structure
+        app := &amp;App{}
+
+        // Create application with options
+        err := wails.Run(&amp;options.App{
+                Title:         "krokodyl",
+                Width:         800,
+                Height:        600,
+                MinWidth:      520,
+                MinHeight:     500,
+                AssetServer: &amp;assetserver.Options{
+                        Assets: assets,
+                },
+                BackgroundColour: &amp;options.RGBA{R: 27, G: 38, B: 54, A: 1},
+                OnStartup:        app.startup,
+                Bind: []interface{}{
+                        app,
+                },
+        })
+
+        if err != nil </span><span class="cov0" title="0">{
+                logrus.WithError(err).Fatal("an error occured while running the app")
+        }</span>
+}
+</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>

@@ -70,9 +70,49 @@ Transfer statuses: preparing → sending/receiving → completed/error
 
 ## Testing
 
-No specific test commands are configured in the project. Use standard Go testing:
+The application includes comprehensive test coverage. To run tests:
+
+### Prerequisites
+The frontend must be built before running Go tests because the main.go file embeds frontend assets:
+
 ```bash
-go test ./...
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+### Running Tests
+
+**Linux/macOS:**
+```bash
+./test.sh
+```
+
+**Windows:**
+```bash
+test.bat
+```
+
+**Manual approach:**
+```bash
+# Build frontend first
+cd frontend && npm install && npm run build && cd ..
+# Then run Go tests
+go test -v ./...
+```
+
+### Test Coverage
+The application has comprehensive test coverage including:
+- Unit tests for all App methods
+- Integration tests for file transfer workflow
+- Edge case testing (empty files, large filenames, etc.)
+- Error condition testing
+- Thread safety testing
+
+To run tests with coverage:
+```bash
+go test -v -cover ./...
 ```
 
 ## Key Dependencies
