@@ -214,10 +214,12 @@ func (s *nearbyServer) handle(conn net.Conn) {
 	})
 
 	accepted := false
+	promptTimer := time.NewTimer(offerPromptTimeout)
 	select {
 	case accepted = <-ch:
-	case <-time.After(offerPromptTimeout):
+	case <-promptTimer.C:
 	}
+	promptTimer.Stop()
 
 	if err := enc.Encode(offerAnswer{Accepted: accepted}); err != nil {
 		return

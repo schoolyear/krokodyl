@@ -11,14 +11,16 @@ func TestRecoveryBudgetGivesUpAfterNoProgress(t *testing.T) {
 	if b.record(30) {
 		t.Fatal("first progress must not give up")
 	}
-	// Then it stalls at the same 30% — no forward movement.
-	for i := 0; i < maxNoProgressAttempts; i++ {
+	// Then it stalls at the same 30% — no forward movement. The first
+	// maxNoProgressAttempts-1 no-progress attempts keep going.
+	for i := 0; i < maxNoProgressAttempts-1; i++ {
 		if b.record(30) {
 			t.Fatalf("gave up too early at no-progress attempt %d", i)
 		}
 	}
+	// The maxNoProgressAttempts-th no-progress attempt gives up.
 	if !b.record(30) {
-		t.Error("should give up after exceeding the no-progress budget")
+		t.Error("should give up once the no-progress budget is reached")
 	}
 }
 

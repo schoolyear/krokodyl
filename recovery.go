@@ -49,7 +49,18 @@ func (b *recoveryBudget) record(attemptPeakPct int) (giveUp bool) {
 		return false
 	}
 	b.noProgress++
-	return b.noProgress > b.maxNoProgress
+	return b.noProgress >= b.maxNoProgress
+}
+
+// overallProgress maps a worker's per-session percent into the band above the
+// progress already achieved, capped at 99 (only completion shows 100). Lives
+// here with the rest of the recovery math.
+func overallProgress(basePct, sessionPct int) int {
+	display := basePct + sessionPct
+	if display > 99 {
+		return 99
+	}
+	return display
 }
 
 // recoveryBackoff grows the wait between attempts and caps it, so a hard-down

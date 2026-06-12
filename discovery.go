@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,7 +122,9 @@ func decodeIdentity(payload []byte) (discoveryIdentity, error) {
 		}
 	}
 	if len(id.Name) > maxPeerNameLen {
-		id.Name = id.Name[:maxPeerNameLen]
+		// Truncate on a rune boundary so a clamped multi-byte name never
+		// becomes invalid UTF-8 when re-encoded to the frontend.
+		id.Name = strings.ToValidUTF8(id.Name[:maxPeerNameLen], "")
 	}
 	if id.Name == "" {
 		id.Name = "unknown device"
