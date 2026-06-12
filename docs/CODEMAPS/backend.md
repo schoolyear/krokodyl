@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-12 | Files scanned: ~27 Go | Token estimate: ~850 -->
+<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: ~28 Go | Token estimate: ~900 -->
 # Backend (Go, package main)
 
 No HTTP server. The "API" is `App` methods bound to the frontend by Wails + an internal stdin/stdout worker protocol.
@@ -10,8 +10,9 @@ SendFiles(paths[]) / SendFile / SendToPeer(peerId,paths)
 ReceiveFile(code,dir)
    → stagingDirForCode → runRecoverableAttempts → runWorkerJob(recv) → tm.update
 CancelTransfer(id)        → popCancel + killWorker (Process.Kill)
-ResendTransfer(id)        → lookup history → verify files → re-send (peer by MachineID, fallback name)
-RespondToOverwrite(id,ans)→ unblocks worker finalize (answers "transfer:overwrite")
+ResendTransfer(id)        → guards → peer send returns NeedsConfirm+name+addr (no start)
+ConfirmResend(id)         → user verified target → actually starts the peer resend
+RespondToOverwrite(promptId,ans) → resolves overwrite AND verify prompts (shared plumbing)
 RespondToNearbyOffer(...) → accept/decline/busy on TLS control channel
 GetTransfers / ClearHistory / GetNearbyPeers / GetNearbyPrefs / SetNearbyVisible(bool)
 SelectFile(s) / SelectDirectory / GetDefaultDownloadPath   # native dialogs
@@ -33,11 +34,14 @@ Parent reads with 64KB-line / 1MB-max scanner. Bad JSON line → warn + skip.
 ```
 transfer:updated   FileTransfer copy on every state change
 transfer:overwrite overwrite decision request (file conflict)
+transfer:verify    received content differs from accepted offer (keep/discard)
 nearby:updated     peer list changed
 nearby:state       discovery available / unavailable
 nearby:offer       incoming offer (sender name + addr)
 transfer:cleared   history wiped
 ```
+All prompts keyed by per-prompt UUID via registerOverwritePrompt/resolveOverwrite.
+Emits go through a.emitEvent (nil-ctx safe for tests).
 
 ## Resilience (recovery.go, stall.go)
 ```
@@ -54,11 +58,13 @@ startStallWatchdog: KILL-ONLY. connectGrace (pre-first-byte) vs stall timeout (a
 
 ## Key files
 ```
-app.go      1187  GUI orchestration, Wails API, recovery glue, history persist
+app.go      1394  GUI orchestration, Wails API, recovery glue, offer-mismatch verify, history persist
 worker.go    238  child process: croc send/recv + 200ms progress poller
-discovery.go 405  multicast advertise/listen, liveness, hide/unhide Gen
-nearby.go    377  TLS control server/client, fingerprint pinning, offer/accept
-staging.go   156  deterministic stagingDirForCode, validateRelPath, moveStagedFile (EXDEV copy fallback)
-settings.go  159  settings.json, MachineID, partial sweep
-recovery.go   80 · stall.go 69 · transfers.go 133 · netaddr.go 101 · history.go 74 · names.go 41 · main.go 137
+discovery.go 408  multicast advertise/listen, liveness, hide/unhide Gen, name sanitize
+nearby.go    438  TLS 1.3 control server/client, FP pinning, offer/accept, per-source backoff
+staging.go   208  stagingDirForCode, validateRelPath (+Win reserved/trailing), atomic copyFile
+settings.go  196  settings.json via updateSettings (settingsMu, atomic, 0o600), MachineID, sweep
+recovery.go   84 · stall.go 69 · transfers.go 133 · netaddr.go 103 · history.go 76 · names.go 64 (sanitizeDisplayName) · main.go 137
 ```
+Test injection points: recoveryBackoffFn, offerPromptWait (package vars).
+Unit tests must never reach runWorkerJob (would spawn the test binary).

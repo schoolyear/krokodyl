@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-12 | Files scanned: ~50 | Token estimate: ~750 -->
+<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: ~50 | Token estimate: ~800 -->
 # Architecture
 
 Type: single cross-platform desktop app. Wails v2 (Go backend + Svelte 5 webview frontend, one binary). P2P transport = croc.
@@ -28,11 +28,15 @@ UI (App.svelte)
 ## Nearby (LAN, zero-code) flow
 ```
 discovery.go  multicast :42791  (advertise id/name/ctrlPort/certFP/addrs, 2s)
-   ▼ peer list
-nearby.go     TLS control channel (cert-FP pinned)
+   ▼ peer list (names sanitized: control chars + BiDi stripped)
+nearby.go     TLS 1.3 control channel (cert-FP pinned; per-source backoff
    sender ─ offer(files,size) ─► receiver ─ accept/decline ─► code handoff ─► croc
+   ▼ after croc finishes: received content CHECKED against the offer
+app.go        describeOfferMismatch → transfer:verify keep/discard prompt
 netaddr.go    rank real-LAN > virtual; sender tries candidates real-first (4s each)
 ```
+Trust model: pinning authenticates the channel, not the identity — human
+confirmation is the backstop (offer prompt, verify prompt, resend confirm).
 
 ## Service boundaries (Go, package main, repo root)
 | Concern | Files |
@@ -52,5 +56,9 @@ netaddr.go    rank real-LAN > virtual; sender tries candidates real-first (4s ea
 - `stagingDirForCode` deterministic → resume; changing it orphans partials.
 - Worker `cmd.Stderr = nil` (Windows GUI-subsystem dead-handle fix).
 - macOS ad-hoc codesign only (no notarization — hard constraint).
+- User prompts keyed by per-prompt UUID (stale answers can't decide later prompts).
+- Peer resend is two-phase: `ResendTransfer` → NeedsConfirm → `ConfirmResend`.
+- Peer display strings pass `sanitizeDisplayName` at decode; settings writes
+  go through `updateSettings` (settingsMu, atomic tmp+rename).
 
 See: [backend.md](backend.md) · [frontend.md](frontend.md) · [data.md](data.md) · [dependencies.md](dependencies.md)

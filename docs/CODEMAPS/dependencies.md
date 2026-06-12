@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-12 | Files scanned: go.mod + package.json | Token estimate: ~550 -->
+<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: go.mod + package.json | Token estimate: ~570 -->
 # Dependencies
 
 ## External services
@@ -36,3 +36,8 @@ Release trigger: push v* tag → build all 3 → softprops/action-gh-release.
 
 ## Generated (do not edit)
 `frontend/wailsjs/**` — Wails-generated Go↔TS bindings; regenerate on Go struct change.
+
+## Known vuln posture (2026-06-13)
+- `govulncheck`: 0 reachable vulnerabilities in Go deps.
+- `npm audit`: 5 advisories, all in the esbuild build toolchain (vite chain) —
+  dev-server-only, never shipped; no non-breaking fix exists upstream yet.
