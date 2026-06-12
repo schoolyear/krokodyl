@@ -1,6 +1,5 @@
 {
   "app": {
-    "title": "🐊 Krokodyl",
     "subtitle": "Intercambio de archivos P2P seguro, rápido y sencillo."
   },
   "tabs": {
@@ -8,8 +7,6 @@
     "receive": "Recibir"
   },
   "send": {
-    "title": "Enviar un archivo",
-    "description": "Seleccione un archivo para generar un código de transferencia seguro.",
     "button": "Seleccionar y enviar archivo",
     "button_sending": "Enviando...",
     "drop_hint": "Suelta tus archivos aquí",
@@ -38,11 +35,9 @@
   },
   "transfer": {
     "unknown_file": "Archivo desconocido",
-    "code_label": "Código:",
     "copy_prompt": "Haga clic para copiar",
     "cancel": "Cancelar",
-    "resend": "Enviar de nuevo",
-    "resend_fallback": "{name} no está cerca — se envía con un código"
+    "resend": "Enviar de nuevo"
   },
   "status": {
     "completed": "completado",
@@ -86,7 +81,6 @@
     "title": "Dispositivos cercanos",
     "empty": "No se encontraron dispositivos: abre krokodyl en la otra máquina, misma red.",
     "unavailable": "La detección está bloqueada en esta red; comparte un código.",
-    "soon": "El envío a dispositivos llega en la próxima actualización",
     "visible": "Visible para otros",
     "hidden": "Oculto: otros no pueden verte",
     "recent": "reciente"
@@ -97,7 +91,15 @@
     "accept": "Aceptar",
     "decline": "Rechazar",
     "to": "a",
-    "from_label": "de",
-    "declined": "Transferencia rechazada"
+    "from_label": "de"
+  },
+  "a11y": {
+    "tabs": "Enviar o recibir",
+    "send_to": "Enviar a {name}",
+    "code_hint": "Pegar un código válido o pulsar Intro inicia la transferencia.",
+    "copy_code": "Copiar el código de transferencia {code}",
+    "theme_dark": "Cambiar al tema oscuro",
+    "theme_light": "Cambiar al tema claro",
+    "language": "Idioma"
   }
 }

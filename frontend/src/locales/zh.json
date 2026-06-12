@@ -1,6 +1,5 @@
 {
   "app": {
-    "title": "🐊 Krokodyl",
     "subtitle": "安全、快速、简单的P2P文件共享。"
   },
   "tabs": {
@@ -8,8 +7,6 @@
     "receive": "接收"
   },
   "send": {
-    "title": "发送文件",
-    "description": "选择一个文件以生成安全传输代码。",
     "button": "选择并发送文件",
     "button_sending": "发送中...",
     "drop_hint": "将文件拖放到这里",
@@ -38,11 +35,9 @@
   },
   "transfer": {
     "unknown_file": "未知文件",
-    "code_label": "代码：",
     "copy_prompt": "点击复制",
     "cancel": "取消",
-    "resend": "再次发送",
-    "resend_fallback": "{name} 不在附近——改用代码发送"
+    "resend": "再次发送"
   },
   "status": {
     "completed": "已完成",
@@ -86,7 +81,6 @@
     "title": "附近的设备",
     "empty": "未发现设备——请在另一台机器上打开 krokodyl（同一网络）。",
     "unavailable": "当前网络阻止了设备发现——请改用代码。",
-    "soon": "发送到设备功能将在下次更新中推出",
     "visible": "对他人可见",
     "hidden": "已隐藏——其他人看不到你",
     "recent": "最近"
@@ -97,7 +91,15 @@
     "accept": "接受",
     "decline": "拒绝",
     "to": "发往",
-    "from_label": "来自",
-    "declined": "已拒绝传输"
+    "from_label": "来自"
+  },
+  "a11y": {
+    "tabs": "发送或接收",
+    "send_to": "发送给 {name}",
+    "code_hint": "粘贴有效代码或按回车键即开始传输。",
+    "copy_code": "复制传输代码 {code}",
+    "theme_dark": "切换到深色主题",
+    "theme_light": "切换到浅色主题",
+    "language": "语言"
   }
 }

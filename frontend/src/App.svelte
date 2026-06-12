@@ -26,6 +26,7 @@
     error?: string;
     resendable?: boolean;
     peerMachineId?: string;
+    resumeCode?: string;
   }
 
   interface NearbyOffer {
@@ -50,6 +51,8 @@
     id: string;
     name: string;
     addr: string;
+    addrs?: string[];
+    port?: number;
     machineId?: string;
   }
 
@@ -118,7 +121,7 @@
     init();
 
     // We must ensure 'isReady' is true before calling any functions that use translations
-    const unsubscribe = _.subscribe(async (t: any) => {
+    const unsubscribe = _.subscribe(async (t: unknown) => {
       if (typeof t !== 'function' || !isReady) return;
       await loadTransfers();
     });
@@ -126,8 +129,9 @@
     EventsOn('transfer:updated', (transfer: FileTransfer) => {
       const index = transfers.findIndex(t => t.id === transfer.id);
       if (index !== -1) {
+        // $state arrays are deep proxies in Svelte 5: index assignment is
+        // reactive on its own, no reassignment needed.
         transfers[index] = transfer;
-        transfers = [...transfers];
       } else {
         transfers = [transfer, ...transfers];
       }
@@ -201,7 +205,13 @@
   });
 
   async function loadTransfers() {
-    transfers = await GetTransfers();
+    try {
+      transfers = await GetTransfers();
+    } catch (error) {
+      // Startup race: the Wails bridge may not be ready yet; the
+      // transfer:updated events repopulate the list as they arrive.
+      console.error('Could not load transfers', error);
+    }
   }
 
   async function browseAndSendFiles() {
@@ -286,8 +296,8 @@
   function formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
@@ -337,12 +347,16 @@
     try {
       const filePaths = await SelectFiles();
       if (filePaths && filePaths.length > 0) {
+        // Same gating as browseAndSendFiles: raised here, cleared by the
+        // transfer:updated handler when the transfer goes terminal.
+        isSending = true;
         await SendToPeer(peer.id, filePaths);
         lastPeerName = peer.name;
       }
     } catch (error) {
       console.error('Error sending to peer:', error);
       showToast($_('toasts.select_file_failed'), 'error');
+      isSending = false;
     }
   }
 
@@ -449,7 +463,7 @@
 
     <main class="scroll-area">
     <section class="surface">
-      <div class="segmented" role="tablist" aria-label="Send or receive">
+      <div class="segmented" role="tablist" aria-label={$_('a11y.tabs')}>
         <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} tabindex={activeTab === 'send' ? 0 : -1} onclick={() => activeTab = 'send'} onkeydown={handleTabKeydown}>
           📤 {$_('tabs.send')}
         </button>
@@ -463,7 +477,7 @@
           {#if waitingSend?.code}
             <div class="code-spotlight">
               <p class="code-label">{$_('send.share_code')}</p>
-              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} aria-label={`Copy transfer code ${waitingSend?.code ?? ''}`} title={$_('transfer.copy_prompt')}>
+              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} aria-label={$_('a11y.copy_code', { values: { code: waitingSend?.code ?? '' } })} title={$_('transfer.copy_prompt')}>
                 <span class="code-value">{waitingSend.code}</span>
                 <span class="code-copy">⧉</span>
               </button>
@@ -491,7 +505,7 @@
             {:else}
               <div class="peer-chips">
                 {#each sortedPeers as peer (peer.id)}
-                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={`Send to ${peer.name}`} title={peer.addr}>
+                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={$_('a11y.send_to', { values: { name: peer.name } })} title={peer.addr}>
                     <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
                     <span class="peer-name">{peer.name}</span>
                     {#if peer.name === lastPeerName}
@@ -531,7 +545,7 @@
           <p class="panel-description">{$_('receive.description')}</p>
           <div class="input-group">
             <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" spellcheck="false" autocomplete="off" />
-            <span id="code-input-hint" class="sr-only">Pasting a valid code, or pressing Enter, starts the transfer.</span>
+            <span id="code-input-hint" class="sr-only">{$_('a11y.code_hint')}</span>
           </div>
           <div class="input-group destination-group">
             <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} aria-label={$_('receive.placeholder_destination')} readonly />
@@ -589,7 +603,7 @@
                 <div class="file-meta">
                   <span>{formatFileSize(transfer.size)}</span>
                   {#if transfer.code && transfer.status === 'waiting'}
-                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} aria-label={`Copy transfer code ${transfer.code}`} title={$_('transfer.copy_prompt')}>
+                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} aria-label={$_('a11y.copy_code', { values: { code: transfer.code } })} title={$_('transfer.copy_prompt')}>
                       {transfer.code}
                     </button>
                   {/if}
