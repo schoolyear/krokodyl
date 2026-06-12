@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -45,6 +45,12 @@
     newSize: number;
     oldModTime: string;
     newModTime: string;
+  }
+
+  interface VerifyPrompt {
+    promptId: string;
+    transferId: string;
+    detail: string;
   }
 
   interface NearbyPeer {
@@ -86,6 +92,10 @@
   let toastType: 'success' | 'error' | 'info' = $state('info');
   let toastTimeout: number;
   let overwritePrompt: OverwritePrompt | null = $state(null);
+  // A finished nearby receive whose content differs from the accepted offer.
+  let verifyPrompt: VerifyPrompt | null = $state(null);
+  // A peer resend awaiting the user's check of the target name + address.
+  let resendConfirm: { id: string; name: string; addr: string } | null = $state(null);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -153,6 +163,10 @@
 
     EventsOn('transfer:overwrite', (prompt: OverwritePrompt) => {
       overwritePrompt = prompt;
+    });
+
+    EventsOn('transfer:verify', (prompt: VerifyPrompt) => {
+      verifyPrompt = prompt;
     });
 
     EventsOn('nearby:updated', (peers: NearbyPeer[]) => {
@@ -366,17 +380,49 @@
     resendNotes = rest;
     try {
       const outcome = await ResendTransfer(id);
-      if (outcome?.message) {
-        showToast(outcome.message, outcome.started ? 'success' : 'error');
-        if (!outcome.started) {
-          resendNotes = { ...resendNotes, [id]: outcome.message };
-        }
+      if (outcome?.needsConfirm) {
+        // Device identity on the LAN is unauthenticated — the user verifies
+        // the target's name and address before any files are offered.
+        resendConfirm = { id, name: outcome.peerName ?? '', addr: outcome.peerAddr ?? '' };
+        return;
       }
+      handleResendOutcome(id, outcome);
     } catch (error) {
       const message = String(error);
       showToast(message, 'error');
       resendNotes = { ...resendNotes, [id]: message };
     }
+  }
+
+  function handleResendOutcome(id: string, outcome: { started: boolean; message?: string } | null) {
+    if (outcome?.message) {
+      showToast(outcome.message, outcome.started ? 'success' : 'error');
+      if (!outcome.started) {
+        resendNotes = { ...resendNotes, [id]: outcome.message };
+      }
+    }
+  }
+
+  async function handleResendConfirm(confirmed: boolean) {
+    if (!resendConfirm) return;
+    const id = resendConfirm.id;
+    resendConfirm = null;
+    if (!confirmed) return;
+    try {
+      handleResendOutcome(id, await ConfirmResend(id));
+    } catch (error) {
+      const message = String(error);
+      showToast(message, 'error');
+      resendNotes = { ...resendNotes, [id]: message };
+    }
+  }
+
+  async function handleVerifyResponse(keep: boolean) {
+    if (!verifyPrompt) return;
+    const promptId = verifyPrompt.promptId;
+    verifyPrompt = null;
+    // Shares the overwrite-response plumbing; stale ids are ignored.
+    await RespondToOverwrite(promptId, keep ? 'yes' : 'no');
   }
 
   async function confirmClearHistory() {
@@ -720,6 +766,33 @@
       <div class="modal-actions">
         <button class="btn" onclick={() => handleOverwriteResponse('no')}>{$_('overwrite.no')}</button>
         <button class="btn primary" onclick={() => handleOverwriteResponse('yes')}>{$_('overwrite.yes')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if verifyPrompt}
+  <div class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title" use:modalDialog={() => handleVerifyResponse(false)}>
+      <h2 id="verify-modal-title">{$_('verify.title')}</h2>
+      <p>{$_('verify.prompt')}</p>
+      <p class="verify-detail">{verifyPrompt.detail}</p>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => handleVerifyResponse(false)}>{$_('verify.discard')}</button>
+        <button class="btn danger" onclick={() => handleVerifyResponse(true)}>{$_('verify.keep')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if resendConfirm}
+  <div class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resend-modal-title" use:modalDialog={() => handleResendConfirm(false)}>
+      <h2 id="resend-modal-title">{$_('resend.title')}</h2>
+      <p>{$_('resend.prompt', { values: { name: resendConfirm.name, addr: resendConfirm.addr }})}</p>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => handleResendConfirm(false)}>{$_('resend.cancel')}</button>
+        <button class="btn primary" onclick={() => handleResendConfirm(true)}>{$_('resend.confirm')}</button>
       </div>
     </div>
   </div>
@@ -1466,6 +1539,16 @@
 
   .file-diff div:not(:last-child) {
     margin-bottom: 0.5rem;
+  }
+
+  .verify-detail {
+    font-family: var(--font-family-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+    background-color: var(--color-bg);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.625rem;
+    word-break: break-word;
   }
 
   .modal-actions {

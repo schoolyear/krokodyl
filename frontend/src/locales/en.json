@@ -101,5 +101,17 @@
     "theme_dark": "Switch to dark theme",
     "theme_light": "Switch to light theme",
     "language": "Language"
+  },
+  "verify": {
+    "title": "Received files don't match the offer",
+    "prompt": "What arrived differs from what you accepted:",
+    "keep": "Keep files anyway",
+    "discard": "Discard"
+  },
+  "resend": {
+    "title": "Send again?",
+    "prompt": "Send the same files to {name} at {addr}?",
+    "confirm": "Send",
+    "cancel": "Cancel"
   }
 }

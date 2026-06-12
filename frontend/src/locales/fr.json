@@ -101,5 +101,17 @@
     "theme_dark": "Passer au thème sombre",
     "theme_light": "Passer au thème clair",
     "language": "Langue"
+  },
+  "verify": {
+    "title": "Les fichiers reçus ne correspondent pas à l'offre",
+    "prompt": "Ce qui est arrivé diffère de ce que vous avez accepté :",
+    "keep": "Conserver quand même",
+    "discard": "Supprimer"
+  },
+  "resend": {
+    "title": "Renvoyer ?",
+    "prompt": "Envoyer les mêmes fichiers à {name} ({addr}) ?",
+    "confirm": "Envoyer",
+    "cancel": "Annuler"
   }
 }

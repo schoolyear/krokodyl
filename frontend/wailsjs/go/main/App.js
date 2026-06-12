@@ -10,6 +10,10 @@ export function ClearHistory() {
   return window['go']['main']['App']['ClearHistory']();
 }
 
+export function ConfirmResend(arg1) {
+  return window['go']['main']['App']['ConfirmResend'](arg1);
+}
+
 export function GetBuildStamp() {
   return window['go']['main']['App']['GetBuildStamp']();
 }

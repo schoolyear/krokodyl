@@ -282,3 +282,90 @@ func TestResendTransferGuards(t *testing.T) {
 		t.Errorf("peer-gone outcome = %+v, want message naming the peer", out)
 	}
 }
+
+func TestDescribeOfferMismatch(t *testing.T) {
+	exp := &receiveExpectation{Names: []string{"report.pdf", "photos"}, Size: 1000}
+	sep := string(filepath.Separator)
+
+	tests := []struct {
+		name     string
+		staged   []stagedFile
+		wantFlag bool
+	}{
+		{
+			name:   "exactly what was offered",
+			staged: []stagedFile{{RelPath: "report.pdf", Size: 900}},
+		},
+		{
+			name: "folder offer expands into nested files",
+			staged: []stagedFile{
+				{RelPath: "photos" + sep + "a.jpg", Size: 400},
+				{RelPath: "photos" + sep + "deep" + sep + "b.jpg", Size: 400},
+			},
+		},
+		{
+			name:     "item that was never offered",
+			staged:   []stagedFile{{RelPath: "malware.exe", Size: 10}},
+			wantFlag: true,
+		},
+		{
+			name: "offered names plus an extra",
+			staged: []stagedFile{
+				{RelPath: "report.pdf", Size: 100},
+				{RelPath: "extra.bin", Size: 100},
+			},
+			wantFlag: true,
+		},
+		{
+			name:   "modest size overshoot tolerated (folder stat undercount)",
+			staged: []stagedFile{{RelPath: "photos" + sep + "big.raw", Size: 5 * 1024 * 1024}},
+		},
+		{
+			name:     "massive size overshoot flagged",
+			staged:   []stagedFile{{RelPath: "report.pdf", Size: 50 * 1024 * 1024}},
+			wantFlag: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := describeOfferMismatch(tt.staged, exp)
+			if (got != "") != tt.wantFlag {
+				t.Errorf("describeOfferMismatch() = %q, wantFlag %v", got, tt.wantFlag)
+			}
+		})
+	}
+}
+
+func TestResendTransferPeerNeedsConfirm(t *testing.T) {
+	a := newTestApp()
+	a.nearby = newPeerRegistry("self", nil)
+	a.nearby.observe(discoveryIdentity{
+		ID: "peer-1", Name: "Brave Otter", Port: 1234,
+		Fingerprint: strings.Repeat("ab", 32), MachineID: "machine-1",
+	}, "192.168.1.42", time.Now())
+
+	dir := t.TempDir()
+	src := filepath.Join(dir, "doc.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.tm.add(FileTransfer{ID: "send-1", Status: FileTransferStatusCompleted,
+		Resendable: true, Paths: []string{src}, Peer: "Brave Otter", PeerMachineID: "machine-1"})
+
+	out := a.ResendTransfer("send-1")
+	if out.Started || !out.NeedsConfirm {
+		t.Fatalf("peer resend must ask for confirmation first, got %+v", out)
+	}
+	if out.PeerName != "Brave Otter" || out.PeerAddr != "192.168.1.42" {
+		t.Errorf("confirmation must show the real target, got name=%q addr=%q", out.PeerName, out.PeerAddr)
+	}
+}
+
+func TestPromptReceiveMismatchCancelDiscards(t *testing.T) {
+	a := newTestApp()
+	cancelCh := make(chan struct{})
+	close(cancelCh)
+	if a.promptReceiveMismatch("receive-1", "detail", cancelCh) {
+		t.Error("a cancelled transfer must discard, not keep")
+	}
+}

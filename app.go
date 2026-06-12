@@ -48,6 +48,9 @@ type App struct {
 	// stale answer can never decide a later prompt.
 	overwriteResponses map[string]chan string
 	cancels            map[string]chan struct{}
+	// expectations holds, per receive transfer, what the accepted nearby
+	// offer promised — so the finished receive can be checked against it.
+	expectations map[string]*receiveExpectation
 
 	historyMu sync.Mutex
 
@@ -65,10 +68,19 @@ const (
 	TransferEventUpdated   string = "transfer:updated"
 	TransferEventCleared   string = "transfer:cleared"
 	TransferEventOverwrite string = "transfer:overwrite"
+	TransferEventVerify    string = "transfer:verify"
 	NearbyEventUpdated     string = "nearby:updated"
 	NearbyEventState       string = "nearby:state"
 	NearbyEventOffer       string = "nearby:offer"
 )
+
+// VerifyPrompt asks the user whether to keep a nearby receive whose content
+// does not match the offer they accepted.
+type VerifyPrompt struct {
+	PromptID   string `json:"promptId"`
+	TransferID string `json:"transferId"`
+	Detail     string `json:"detail"`
+}
 
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
@@ -93,6 +105,7 @@ func (a *App) startup(ctx context.Context) {
 	a.workers = make(map[string]*exec.Cmd)
 	a.overwriteResponses = make(map[string]chan string)
 	a.cancels = make(map[string]chan struct{})
+	a.expectations = make(map[string]*receiveExpectation)
 
 	// Files dropped anywhere on the window start a send immediately.
 	runtime.OnFileDrop(ctx, func(_, _ int, paths []string) {
@@ -242,15 +255,25 @@ func (a *App) rememberLastPeer(name string) {
 	}
 }
 
+// receiveExpectation is what an accepted nearby offer promised; the finished
+// receive is checked against it because croc delivers whatever the sender put
+// in the room — not necessarily what was offered.
+type receiveExpectation struct {
+	Names []string
+	Size  int64
+}
+
 // acceptPeerTransfer runs after the user accepted an offer and the code
-// arrived: start receiving into the remembered destination.
-func (a *App) acceptPeerTransfer(senderName, code string) {
+// arrived: start receiving into the remembered destination, keeping the
+// offer's file list and size to verify the received content against.
+func (a *App) acceptPeerTransfer(offer NearbyOffer, code string) {
 	dest, err := a.GetDefaultDownloadPath()
 	if err != nil {
 		logrus.WithError(err).Error("cannot receive nearby transfer: no destination")
 		return
 	}
-	if _, err := a.startReceive(code, dest, senderName); err != nil {
+	expect := &receiveExpectation{Names: offer.Files, Size: offer.Size}
+	if _, err := a.startReceive(code, dest, offer.SenderName, expect); err != nil {
 		logrus.WithError(err).Error("could not start nearby receive")
 	}
 }
@@ -493,19 +516,39 @@ func (a *App) sendFilesWithCode(paths []string, code string) (string, error) {
 
 // ResendOutcome always carries a human-readable message so the frontend can
 // give feedback for every case — success, "device gone", or missing files —
-// without depending on promise-rejection semantics.
+// without depending on promise-rejection semantics. NeedsConfirm means
+// nothing started yet: the frontend must show the target's name and address
+// and call ConfirmResend. That human check is the defense against a spoofed
+// machine id (device identity comes from unauthenticated multicast, so a
+// hostile LAN peer could otherwise claim the target's id and receive the
+// files).
 type ResendOutcome struct {
-	Started bool   `json:"started"`
-	Message string `json:"message"`
+	Started      bool   `json:"started"`
+	Message      string `json:"message"`
+	NeedsConfirm bool   `json:"needsConfirm,omitempty"`
+	PeerName     string `json:"peerName,omitempty"`
+	PeerAddr     string `json:"peerAddr,omitempty"`
 }
 
-// ResendTransfer repeats a past send with the same source files. Peer sends
-// re-target the same machine by its stable machine id (so a restart + rename
-// still matches). If that machine is no longer nearby it starts nothing and
-// says so — a doomed code send stuck on "waiting" forever is worse than a
-// clear message. Missing source files abort with an explicit list rather than
-// sending a silent partial.
+// ResendTransfer repeats a past send with the same source files. Code sends
+// start immediately; peer sends return NeedsConfirm so the user verifies the
+// target device first (see ResendOutcome).
 func (a *App) ResendTransfer(id string) ResendOutcome {
+	return a.resendTransfer(id, false)
+}
+
+// ConfirmResend actually starts a peer resend the user confirmed.
+func (a *App) ConfirmResend(id string) ResendOutcome {
+	return a.resendTransfer(id, true)
+}
+
+// resendTransfer resolves a repeat send. Peer sends re-target the same
+// machine by its stable machine id (so a restart + rename still matches). If
+// that machine is no longer nearby it starts nothing and says so — a doomed
+// code send stuck on "waiting" forever is worse than a clear message.
+// Missing source files abort with an explicit list rather than sending a
+// silent partial.
+func (a *App) resendTransfer(id string, confirmed bool) ResendOutcome {
 	t, ok := a.tm.get(id)
 	if !ok {
 		return ResendOutcome{Message: "That transfer is no longer available."}
@@ -540,6 +583,16 @@ func (a *App) ResendTransfer(id string) ResendOutcome {
 	peerID, ok := a.findPeerForResend(t.PeerMachineID, t.Peer)
 	if !ok {
 		return ResendOutcome{Message: t.Peer + " isn't nearby anymore — open krokodyl there to send again."}
+	}
+	if !confirmed {
+		// The machine-id match is a lookup, not authentication. Surface who
+		// and where the files would go; the user confirms before anything is
+		// offered.
+		peer, found := a.nearby.get(peerID)
+		if !found {
+			return ResendOutcome{Message: t.Peer + " isn't nearby anymore — open krokodyl there to send again."}
+		}
+		return ResendOutcome{NeedsConfirm: true, PeerName: peer.Name, PeerAddr: peer.Addr}
 	}
 	if _, err := a.sendToPeer(peerID, t.Paths, code); err != nil {
 		return ResendOutcome{Message: err.Error()}
@@ -659,11 +712,14 @@ func (a *App) runSendAttempt(id string, job workerJob, grace time.Duration, base
 	return peak, workerErrMsg, err
 }
 
+// ReceiveFile starts a code-based receive into destinationPath.
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
-	return a.startReceive(code, destinationPath, "")
+	// Code receives carry no expectation: the user typed the code, there was
+	// no offer to verify against.
+	return a.startReceive(code, destinationPath, "", nil)
 }
 
-func (a *App) startReceive(code, destinationPath, peerName string) (string, error) {
+func (a *App) startReceive(code, destinationPath, peerName string, expect *receiveExpectation) (string, error) {
 	info, err := os.Stat(destinationPath)
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("destination is not a usable directory: %s", destinationPath)
@@ -685,9 +741,24 @@ func (a *App) startReceive(code, destinationPath, peerName string) (string, erro
 	}
 	a.tm.add(transfer)
 
+	if expect != nil {
+		a.mu.Lock()
+		a.expectations[transfer.ID] = expect
+		a.mu.Unlock()
+	}
+
 	go a.performReceive(transfer.ID, code, destinationPath)
 
 	return transfer.ID, nil
+}
+
+// popExpectation removes and returns the offer expectation for a transfer.
+func (a *App) popExpectation(id string) *receiveExpectation {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	exp := a.expectations[id]
+	delete(a.expectations, id)
+	return exp
 }
 
 func (a *App) performReceive(id, code, destinationPath string) {
@@ -718,6 +789,7 @@ func (a *App) performReceive(id, code, destinationPath string) {
 		return a.runReceiveAttempt(id, job, connectGrace(n), basePct)
 	})
 	if !ok {
+		a.popExpectation(id) // nothing to verify — the receive never finished
 		// Cancelled → nothing to resume, drop the partial. Gave up → keep it
 		// so a manual Send again can still try later.
 		if t, ok := a.tm.get(id); ok && t.Status == FileTransferStatusCancelled {
@@ -785,6 +857,19 @@ func (a *App) finalizeReceive(id, stagingDir, destinationPath string, cancelCh c
 		return
 	}
 
+	// A nearby receive was consented to on the basis of a specific offer, but
+	// croc delivers whatever the sender put in the room. If the content
+	// differs from the offer, the user decides again before anything leaves
+	// staging.
+	if exp := a.popExpectation(id); exp != nil {
+		if mismatch := describeOfferMismatch(staged, exp); mismatch != "" {
+			if !a.promptReceiveMismatch(id, mismatch, cancelCh) {
+				a.failTransfer(id, "discarded: "+mismatch)
+				return // deferred cleanup removes the staged files
+			}
+		}
+	}
+
 	var moved []string
 	var totalSize int64
 	for _, sf := range staged {
@@ -827,6 +912,16 @@ func (a *App) finalizeReceive(id, stagingDir, destinationPath string, cancelCh c
 		t.Progress = 100
 		t.Speed = 0
 	})
+}
+
+// emitEvent forwards to the Wails runtime unless there is no UI context
+// (unit tests construct App without one). Events are advisory; dropping them
+// without a webview is correct.
+func (a *App) emitEvent(name string, payload ...interface{}) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.EventsEmit(a.ctx, name, payload...)
 }
 
 // registerOverwritePrompt creates a fresh per-prompt response channel keyed
@@ -872,7 +967,7 @@ func (a *App) promptOverwrite(id string, sf stagedFile, existing os.FileInfo, ca
 	promptID, responseChan := a.registerOverwritePrompt()
 	defer a.removeOverwritePrompt(promptID)
 
-	runtime.EventsEmit(a.ctx, TransferEventOverwrite, OverwritePrompt{
+	a.emitEvent(TransferEventOverwrite, OverwritePrompt{
 		PromptID:   promptID,
 		TransferID: id,
 		FileName:   sf.RelPath,
@@ -891,9 +986,75 @@ func (a *App) promptOverwrite(id string, sf stagedFile, existing os.FileInfo, ca
 }
 
 // RespondToOverwrite resolves an overwrite prompt by its prompt id (from the
-// OverwritePrompt payload). Late or duplicate responses are ignored.
+// OverwritePrompt payload). Late or duplicate responses are ignored. The
+// verify prompt shares the same response plumbing.
 func (a *App) RespondToOverwrite(promptID string, response string) {
 	a.resolveOverwrite(promptID, response)
+}
+
+// offerSizeSlack tolerates legitimate overshoot before flagging a mismatch:
+// folder sends understate the offered size (only top-level files are
+// stat-summed), so only a substantial excess is suspicious.
+const offerSizeSlack = 16 * 1024 * 1024 // bytes, on top of +25%
+
+// describeOfferMismatch compares what croc actually delivered against what
+// the accepted offer promised. Empty string means acceptable. Folder offers
+// legitimately expand into many nested files, so the comparison is on
+// top-level names (must all have been offered) and total size (bounded
+// overshoot).
+func describeOfferMismatch(staged []stagedFile, exp *receiveExpectation) string {
+	offered := make(map[string]bool, len(exp.Names))
+	for _, n := range exp.Names {
+		offered[n] = true
+	}
+
+	var extras []string
+	seen := make(map[string]bool)
+	var total int64
+	for _, sf := range staged {
+		total += sf.Size
+		top := sf.RelPath
+		if i := strings.IndexByte(top, byte(filepath.Separator)); i >= 0 {
+			top = top[:i]
+		}
+		if !offered[top] && !seen[top] {
+			seen[top] = true
+			extras = append(extras, top)
+		}
+	}
+
+	if len(extras) > 0 {
+		shown := extras
+		if len(shown) > 5 {
+			shown = append(append([]string{}, shown[:5]...), fmt.Sprintf("+%d more", len(extras)-5))
+		}
+		return fmt.Sprintf("the sender delivered items that were not offered: %s", strings.Join(shown, ", "))
+	}
+	if limit := exp.Size + exp.Size/4 + offerSizeSlack; total > limit {
+		return fmt.Sprintf("the sender delivered far more data (%d bytes) than offered (%d bytes)", total, exp.Size)
+	}
+	return ""
+}
+
+// promptReceiveMismatch asks the user whether to keep a receive whose content
+// differs from the accepted offer. Cancel/shutdown count as "discard".
+func (a *App) promptReceiveMismatch(id, detail string, cancelCh chan struct{}) bool {
+	promptID, responseChan := a.registerOverwritePrompt()
+	defer a.removeOverwritePrompt(promptID)
+
+	logrus.Warnf("transfer %s: received content differs from the accepted offer: %s", id, detail)
+	a.emitEvent(TransferEventVerify, VerifyPrompt{
+		PromptID:   promptID,
+		TransferID: id,
+		Detail:     detail,
+	})
+
+	select {
+	case response := <-responseChan:
+		return response == "yes"
+	case <-cancelCh:
+		return false
+	}
 }
 
 // CancelTransfer kills the worker process behind a transfer and signals every

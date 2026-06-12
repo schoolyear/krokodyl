@@ -101,5 +101,17 @@
     "theme_dark": "Schakel naar donker thema",
     "theme_light": "Schakel naar licht thema",
     "language": "Taal"
+  },
+  "verify": {
+    "title": "Ontvangen bestanden komen niet overeen met het aanbod",
+    "prompt": "Wat is binnengekomen verschilt van wat je accepteerde:",
+    "keep": "Bestanden toch bewaren",
+    "discard": "Weggooien"
+  },
+  "resend": {
+    "title": "Opnieuw versturen?",
+    "prompt": "Dezelfde bestanden versturen naar {name} op {addr}?",
+    "confirm": "Versturen",
+    "cancel": "Annuleren"
   }
 }

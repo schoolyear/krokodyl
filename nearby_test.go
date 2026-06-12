@@ -19,8 +19,8 @@ func startTestServer(t *testing.T, accept bool) (srv *nearbyServer, port int, fi
 			// Simulate the user answering the prompt.
 			go s.respond(offer.ID, accept)
 		},
-		func(senderName, code string) {
-			accepted.Store("sender", senderName)
+		func(offer NearbyOffer, code string) {
+			accepted.Store("sender", offer.SenderName)
 			accepted.Store("code", code)
 		},
 	)
@@ -159,7 +159,8 @@ func TestValidateOfferRequest(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateOfferRequest(tt.req)
+			req := tt.req
+			err := validateOfferRequest(&req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateOfferRequest(%+v) error = %v, wantErr %v", tt.req, err, tt.wantErr)
 			}
@@ -173,7 +174,7 @@ func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
 	offerPending := make(chan struct{})
 	var s *nearbyServer
 	s, port, fp, err := func() (*nearbyServer, int, string, error) {
-		return startNearbyServer(func(NearbyOffer) { close(offerPending) }, func(string, string) {})
+		return startNearbyServer(func(NearbyOffer) { close(offerPending) }, func(NearbyOffer, string) {})
 	}()
 	if err != nil {
 		t.Fatal(err)
@@ -208,4 +209,44 @@ func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
 	// Unblock the first offer.
 	s.close()
 	<-firstDone
+}
+
+func TestNearbyServerBacksOffSourceAfterTimedOutOffer(t *testing.T) {
+	// Mutates package-level offerPromptWait — must not run in parallel.
+	orig := offerPromptWait
+	offerPromptWait = 100 * time.Millisecond
+	defer func() { offerPromptWait = orig }()
+
+	// No auto-responder: the first offer expires unanswered.
+	s, port, fp, err := startNearbyServer(func(NearbyOffer) {}, func(NearbyOffer, string) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.close)
+
+	answer, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
+		SenderName: "hog", Files: []string{"a"}, Size: 1,
+	}, "code-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Accepted {
+		t.Fatal("unanswered offer must not be accepted")
+	}
+
+	// The slot is free again, but the same source is now backed off: it must
+	// be refused immediately (busy) instead of re-occupying the prompt.
+	start := time.Now()
+	answer, err = sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
+		SenderName: "hog", Files: []string{"a"}, Size: 1,
+	}, "code-two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !answer.Busy {
+		t.Errorf("backed-off source should get busy, got %+v", answer)
+	}
+	if elapsed := time.Since(start); elapsed > offerPromptWait {
+		t.Errorf("backed-off offer waited %v — it must be refused immediately, not re-hold the slot", elapsed)
+	}
 }

@@ -101,5 +101,17 @@
     "theme_dark": "切换到深色主题",
     "theme_light": "切换到浅色主题",
     "language": "语言"
+  },
+  "verify": {
+    "title": "收到的文件与提议不符",
+    "prompt": "实际收到的内容与你接受的提议不同：",
+    "keep": "仍然保留文件",
+    "discard": "丢弃"
+  },
+  "resend": {
+    "title": "再次发送？",
+    "prompt": "将相同的文件发送给 {name}（{addr}）？",
+    "confirm": "发送",
+    "cancel": "取消"
   }
 }

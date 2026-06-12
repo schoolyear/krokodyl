@@ -101,5 +101,17 @@
     "theme_dark": "Váltás sötét témára",
     "theme_light": "Váltás világos témára",
     "language": "Nyelv"
+  },
+  "verify": {
+    "title": "A kapott fájlok nem egyeznek az ajánlattal",
+    "prompt": "Ami megérkezett, eltér attól, amit elfogadtál:",
+    "keep": "Fájlok megtartása mégis",
+    "discard": "Elvetés"
+  },
+  "resend": {
+    "title": "Újraküldés?",
+    "prompt": "Ugyanezeket a fájlokat küldöd ide: {name} ({addr})?",
+    "confirm": "Küldés",
+    "cancel": "Mégse"
   }
 }
