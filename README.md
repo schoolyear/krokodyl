@@ -1,12 +1,22 @@
 <img src="build/appicon.png" alt="krokodyl icon" width="128"/>
 
-## Project Overview
+# krokodyl
 
-This is a Wails application called "krokodyl" that provides a desktop GUI for peer-to-peer file transfers using the croc protocol. The application is built with:
+A small, AirDrop-style **peer-to-peer file transfer** desktop app. Drop files, share a code (or just pick a nearby device), and they move directly between machines over the [croc](https://github.com/schollz/croc) protocol — LAN or across the internet, encrypted end-to-end. No account, no cloud, no size limit.
 
-- **Backend**: Go with Wails v2 framework
-- **Frontend**: Svelte with TypeScript and Vite
-- **File Transfer**: Uses the croc library (github.com/schollz/croc/v10) for secure P2P file transfers
+- **Backend:** Go + [Wails v2](https://wails.io)
+- **Frontend:** Svelte 5 (runes) + TypeScript + Vite
+- **Transport:** `github.com/schollz/croc/v10` (PAKE-secured P2P)
+
+## Features
+
+- **Code transfer** — share a short human code; works on the same LAN or across networks.
+- **Nearby devices** — AirDrop-style discovery on the local network; send with no code, just pick a device (TLS control channel with certificate-fingerprint pinning).
+- **Resilient transfers** — survives Wi-Fi drops: stall detection, auto-reconnect, and **resume from where it left off** (the progress bar continues instead of restarting).
+- **Big files** — streamed and chunked; no practical size cap.
+- **Resend** — repeat a past transfer to the same device in one click (remembers the device even if it renamed).
+- **Native shell** — platform window chrome, light/dark themes, 6 languages (en/nl/fr/es/hu/zh), and a WCAG 2.1 AA accessible UI.
+- **Cross-platform** — Windows, macOS (universal), Linux.
 
 ## Installation
 
@@ -35,76 +45,71 @@ If something goes wrong, the app writes a log you can attach to a bug report:
 - Windows: `%LOCALAPPDATA%\krokodyl\krokodyl.log`
 - Linux: `~/.cache/krokodyl/krokodyl.log`
 
-## Architecture
+## Development
 
-The application follows a typical Wails structure:
+### Prerequisites
 
-- `main.go` - Entry point that initializes the Wails application
-- `app.go` - Core application logic with file transfer functionality
-- `frontend/` - Svelte TypeScript frontend
-- `wails.json` - Wails configuration file
+- **Go** 1.25+
+- **Node.js** 22+
+- **Wails CLI** v2.12.0 — `go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0` (keep in sync with `go.mod`)
+- **Linux only:** `gcc libgtk-3-dev libwebkit2gtk-4.1-dev`
+- Check your toolchain with `wails doctor`
 
-### Key Components
+### Run & build
 
-**Go Backend (`app.go`):**
-- `App` struct manages file transfers and application state
-- `FileTransfer` struct represents transfer operations with status tracking
-- Main methods: `SendFile()`, `ReceiveFile()`, `SelectFile()`, `SelectDirectory()`
-- Uses croc protocol with relay servers for secure P2P transfers
-- Emits events to frontend for real-time progress updates
-
-**Frontend (`frontend/`):**
-- Svelte 3 with TypeScript
-- Vite as build tool
-- Communicates with Go backend through Wails bindings
-
-## Development Commands
-
-### Running the Application
 ```bash
-wails dev
-```
-This starts the development server with hot reload. A dev server runs on http://localhost:34115 for browser-based development.
+wails dev          # hot-reload dev (Go + Vite); browser debug at http://localhost:34115
+wails build        # production build → build/bin/krokodyl(.exe)
 
-### Building
-```bash
-wails build
-```
-Creates a production build of the application.
-
-### Frontend Development
-```bash
-cd frontend
-npm install          # Install dependencies
-npm run dev          # Start Vite dev server
-npm run build        # Build frontend
-npm run preview      # Preview built frontend
-npm run check        # Run svelte-check for TypeScript validation
+# Linux MUST pass the webkit tag (links libwebkit2gtk-4.1, not 4.0):
+wails build -platform linux/amd64 -tags webkit2_41
 ```
 
-### Go Development
+### Test & check
+
 ```bash
-go mod tidy          # Clean up Go dependencies
-go build             # Build Go binary
+go test -race ./...                          # full Go test gate (every source file has a _test.go sibling)
+go test -race -run TestName ./...            # a single test
+gofmt -w . && go vet ./...                   # format + static analysis
+
+cd frontend && npm install && npm run check  # svelte-check: TypeScript + accessibility gate (expect 0/0)
 ```
 
-## File Transfer Flow
+> Nearby-device and transfer features need **two real machines** to test properly — loopback/single-instance hides cross-network, "room not ready", and virtual-adapter (VM↔host) bugs. On Windows, test the **built GUI**, not `go run` (a terminal masks a GUI-subsystem stderr bug).
 
-1. **Sending**: User selects file → App creates transfer record → Uses croc to send via relay servers → Generates shareable code
-2. **Receiving**: User enters code and selects destination → App uses croc to receive files → Updates transfer status
+### Project layout
 
-Transfer statuses: preparing → sending/receiving → completed/error
-
-## Testing
-
-No specific test commands are configured in the project. Use standard Go testing:
-```bash
-go test ./...
 ```
+*.go                  # Go backend, package main, flat at repo root
+  main.go             #   entry; dispatches GUI vs --transfer-worker child process
+  app.go              #   GUI orchestration + Wails-bound API
+  worker.go           #   per-transfer subprocess (one croc transfer, then exits)
+  recovery.go stall.go#   retry/resume + stall watchdog
+  discovery.go nearby.go netaddr.go names.go   # LAN discovery + nearby send
+  settings.go history.go staging.go transfers.go
+frontend/src/         # Svelte 5 app (App.svelte is the hub)
+frontend/wailsjs/      # GENERATED Go↔TS bindings — do not hand-edit
+docs/CODEMAPS/        # token-lean architecture maps — start here
+CLAUDE.md             # contributor guide / conventions
+```
+
+For architecture depth, read [`docs/CODEMAPS/`](docs/CODEMAPS) (system, backend, frontend, data, dependencies) and [`CLAUDE.md`](CLAUDE.md).
+
+### How it works (in one paragraph)
+
+The app is **one binary that runs in two modes**: the GUI process, and — spawned per transfer — a `--transfer-worker` child that runs a single croc send/receive and exits. The subprocess model gives kill-based cancellation, working-directory isolation, and crash isolation. A recovery loop retries dropped transfers with backoff and resumes from a deterministic staging directory, so a flaky link doesn't lose progress. Nearby discovery uses LAN multicast to advertise devices and an ephemeral pinned-TLS channel to hand off the croc code without typing.
+
+## Contributing
+
+- Conventional commit subjects: `feat:` / `fix:` / `refactor:` / `docs:` / `test:` / `chore:` / `perf:` / `ci:`.
+- When you change a Go method exposed to the frontend, regenerate the `wailsjs/` bindings (don't hand-edit them).
+- When you add a UI string, add it to **all** locale files in `frontend/src/locales/`.
+- Releases are cut by pushing a `v*` tag on `main`, which triggers the GitHub Actions build + publish.
 
 ## Key Dependencies
 
-- `github.com/wailsapp/wails/v2` - Cross-platform desktop app framework
-- `github.com/schollz/croc/v10` - Secure P2P file transfer library
-- `github.com/sirupsen/logrus` - Structured logging
-- `github.com/pkg/errors` - Error handling with stack traces
+- [`wailsapp/wails/v2`](https://github.com/wailsapp/wails) — cross-platform desktop framework (webview + Go IPC)
+- [`schollz/croc/v10`](https://github.com/schollz/croc) — secure P2P file transfer
+- [`schollz/peerdiscovery`](https://github.com/schollz/peerdiscovery) — LAN multicast discovery
+- [`sirupsen/logrus`](https://github.com/sirupsen/logrus) — structured logging
+- `svelte` 5 · `vite` 6 · `svelte-i18n` — frontend
