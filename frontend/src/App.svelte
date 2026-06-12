@@ -386,6 +386,58 @@
       nearbyOffer = null;
     }
   }
+
+  // Arrow-key navigation for the Send/Receive tablist (ARIA tabs pattern).
+  // Roving-tabindex tabs: arrow/Home/End move selection and focus together
+  // (automatic activation, per the ARIA tabs pattern).
+  function handleTabKeydown(event: KeyboardEvent) {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      activeTab = (event.key === 'ArrowRight' || event.key === 'End') ? 'receive' : 'send';
+      const id = activeTab === 'send' ? 'tab-send' : 'tab-receive';
+      document.getElementById(id)?.focus();
+    }
+  }
+
+  // Svelte action: make a modal usable by keyboard — focus the first control,
+  // trap Tab within it, close on Escape, and restore focus to whatever was
+  // focused before it opened.
+  function modalDialog(node: HTMLElement, onClose: () => void) {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusables = () => Array.from(
+      node.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter((el) => !el.hasAttribute('disabled'));
+
+    focusables()[0]?.focus();
+
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    node.addEventListener('keydown', onKeydown);
+    return {
+      destroy() {
+        node.removeEventListener('keydown', onKeydown);
+        previouslyFocused?.focus?.();
+      },
+    };
+  }
 </script>
 
 {#if isReady}
@@ -394,11 +446,11 @@
 
     <main class="scroll-area">
     <section class="surface">
-      <div class="segmented" role="tablist">
-        <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} onclick={() => activeTab = 'send'}>
+      <div class="segmented" role="tablist" aria-label="Send or receive">
+        <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} tabindex={activeTab === 'send' ? 0 : -1} onclick={() => activeTab = 'send'} onkeydown={handleTabKeydown}>
           📤 {$_('tabs.send')}
         </button>
-        <button class="segment" class:active={activeTab === 'receive'} role="tab" id="tab-receive" aria-controls="panel-receive" aria-selected={activeTab === 'receive'} onclick={() => activeTab = 'receive'}>
+        <button class="segment" class:active={activeTab === 'receive'} role="tab" id="tab-receive" aria-controls="panel-receive" aria-selected={activeTab === 'receive'} tabindex={activeTab === 'receive' ? 0 : -1} onclick={() => activeTab = 'receive'} onkeydown={handleTabKeydown}>
           📥 {$_('tabs.receive')}
         </button>
       </div>
@@ -408,7 +460,7 @@
           {#if waitingSend?.code}
             <div class="code-spotlight">
               <p class="code-label">{$_('send.share_code')}</p>
-              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} title={$_('transfer.copy_prompt')}>
+              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} aria-label={`Copy transfer code ${waitingSend?.code ?? ''}`} title={$_('transfer.copy_prompt')}>
                 <span class="code-value">{waitingSend.code}</span>
                 <span class="code-copy">⧉</span>
               </button>
@@ -422,7 +474,7 @@
                 {$_('nearby.title')}
                 {#if deviceName}<span class="nearby-self">· {$_('history.you_are')} {deviceName}</span>{/if}
               </p>
-              <button class="visibility-toggle" class:hidden-state={!nearbyVisible} onclick={toggleNearbyVisible} title={nearbyVisible ? $_('nearby.visible') : $_('nearby.hidden')} aria-pressed={nearbyVisible}>
+              <button class="visibility-toggle" class:hidden-state={!nearbyVisible} onclick={toggleNearbyVisible} title={nearbyVisible ? $_('nearby.visible') : $_('nearby.hidden')} aria-label={nearbyVisible ? $_('nearby.visible') : $_('nearby.hidden')} aria-pressed={nearbyVisible}>
                 {nearbyVisible ? '👁' : '🙈'}
               </button>
             </div>
@@ -436,7 +488,7 @@
             {:else}
               <div class="peer-chips">
                 {#each sortedPeers as peer (peer.id)}
-                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} title={peer.addr}>
+                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={`Send to ${peer.name}`} title={peer.addr}>
                     <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
                     <span class="peer-name">{peer.name}</span>
                     {#if peer.name === lastPeerName}
@@ -475,10 +527,11 @@
           <h2>{$_('receive.title')}</h2>
           <p class="panel-description">{$_('receive.description')}</p>
           <div class="input-group">
-            <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} spellcheck="false" autocomplete="off" />
+            <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" spellcheck="false" autocomplete="off" />
+            <span id="code-input-hint" class="sr-only">Pasting a valid code, or pressing Enter, starts the transfer.</span>
           </div>
           <div class="input-group destination-group">
-            <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
+            <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} aria-label={$_('receive.placeholder_destination')} readonly />
             <button class="btn" onclick={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
           </div>
           <button class="btn primary wide" onclick={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
@@ -512,7 +565,7 @@
           {#each transfers as transfer (transfer.id)}
             {@const statusInfo = getStatusInfo(transfer.status)}
             <div class="transfer-item" style="--status-color: {statusInfo.color}">
-              <div class="status-icon">{statusInfo.icon}</div>
+              <div class="status-icon" aria-hidden="true">{statusInfo.icon}</div>
               <div class="transfer-details">
                 <div class="filename">
                   {transfer.name || $_('transfer.unknown_file')}
@@ -521,7 +574,7 @@
                   {/if}
                 </div>
                 {#if transfer.status === 'error' && transfer.error}
-                  <div class="error-text">{transfer.error}</div>
+                  <div class="error-text" role="alert">{transfer.error}</div>
                 {/if}
                 {#if transfer.files && transfer.files.length > 1}
                   <div class="file-list">
@@ -533,18 +586,18 @@
                 <div class="file-meta">
                   <span>{formatFileSize(transfer.size)}</span>
                   {#if transfer.code && transfer.status === 'waiting'}
-                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} title={$_('transfer.copy_prompt')}>
+                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} aria-label={`Copy transfer code ${transfer.code}`} title={$_('transfer.copy_prompt')}>
                       {transfer.code}
                     </button>
                   {/if}
                 </div>
               </div>
               <div class="transfer-status">
-                <div class="status-text">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
-                <div class="progress-bar">
+                <div class="status-text" aria-live="polite">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
+                <div class="progress-bar" aria-hidden="true">
                   <div class="progress-fill" style="width: {transfer.progress}%"></div>
                 </div>
-                <div class="progress-text">
+                <div class="progress-text" aria-hidden="true">
                   {transfer.progress}%{transfer.speed > 0 ? ` · ${formatFileSize(transfer.speed)}/s` : ''}
                 </div>
                 {#if ACTIVE_STATUSES.includes(transfer.status)}
@@ -552,7 +605,7 @@
                     ✕ {$_('transfer.cancel')}
                   </button>
                 {:else if resendNotes[transfer.id]}
-                  <div class="resend-note">{resendNotes[transfer.id]}</div>
+                  <div class="resend-note" role="status" aria-live="polite">{resendNotes[transfer.id]}</div>
                 {:else if transfer.resendable}
                   <button class="btn resend-btn" onclick={() => resendTransfer(transfer.id)} title={$_('transfer.resend')}>
                     ↻ {$_('transfer.resend')}
@@ -579,15 +632,15 @@
 
 
 {#if toastMessage}
-  <div class="toast" class:success={toastType === 'success'} class:error={toastType === 'error'}>
+  <div class="toast" class:success={toastType === 'success'} class:error={toastType === 'error'} role={toastType === 'error' ? 'alert' : 'status'} aria-live={toastType === 'error' ? 'assertive' : 'polite'} aria-atomic="true">
     {toastMessage}
   </div>
 {/if}
 
 {#if showClearConfirm}
   <div class="modal-backdrop">
-    <div class="modal">
-      <h2>{$_('history.clear')}</h2>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="clear-modal-title" use:modalDialog={() => showClearConfirm = false}>
+      <h2 id="clear-modal-title">{$_('history.clear')}</h2>
       <p>{$_('history.clear_confirm')}</p>
       <div class="modal-actions">
         <button class="btn" onclick={() => showClearConfirm = false}>{$_('history.cancel')}</button>
@@ -599,8 +652,8 @@
 
 {#if nearbyOffer}
   <div class="modal-backdrop">
-    <div class="modal">
-      <h2>{$_('offer.title')}</h2>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="offer-modal-title" use:modalDialog={() => handleOfferResponse(false)}>
+      <h2 id="offer-modal-title">{$_('offer.title')}</h2>
       <p>{$_('offer.from', { values: { name: nearbyOffer.senderName }})}</p>
       <div class="file-diff offer-files">
         {#each nearbyOffer.files.slice(0, 8) as file}
@@ -624,8 +677,8 @@
 
 {#if overwritePrompt}
   <div class="modal-backdrop">
-    <div class="modal">
-      <h2>{$_('overwrite.title')}</h2>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="overwrite-modal-title" use:modalDialog={() => handleOverwriteResponse('no')}>
+      <h2 id="overwrite-modal-title">{$_('overwrite.title')}</h2>
       <p>
         {$_('overwrite.prompt', { values: { file: overwritePrompt.fileName }})}
       </p>
@@ -1018,13 +1071,14 @@
   }
 
   .btn.primary {
-    background-color: var(--color-primary);
+    /* Darker green so white label text clears WCAG AA 4.5:1 contrast. */
+    background-color: var(--color-primary-strong);
     color: #fff;
     box-shadow: var(--shadow-1);
   }
 
   .btn.primary:hover:not(:disabled) {
-    background-color: var(--color-primary-hover);
+    background-color: var(--color-primary-strong-hover);
     transform: translateY(-1px);
     box-shadow: var(--shadow-2);
   }
@@ -1227,6 +1281,9 @@
   }
 
   .code {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.5rem;
     font-family: var(--font-family-mono);
     font-weight: 700;
     background-color: var(--color-bg);
@@ -1277,14 +1334,14 @@
   .cancel-btn {
     margin-top: 0.25rem;
     padding: 0.25rem 0.5rem;
-    min-height: unset;
+    min-height: 1.5rem;
     font-size: clamp(0.7rem, 2vw, 0.8rem);
   }
 
   .resend-btn {
     margin-top: 0.25rem;
     padding: 0.3rem 0.625rem;
-    min-height: unset;
+    min-height: 1.5rem;
     font-size: clamp(0.72rem, 2vw, 0.82rem);
     font-weight: 700;
     background-color: var(--color-primary-soft);
@@ -1293,7 +1350,8 @@
   }
 
   .resend-btn:hover {
-    background-color: var(--color-primary);
+    /* Darker green keeps white label text above 4.5:1 on hover. */
+    background-color: var(--color-primary-strong);
     color: #fff;
   }
 
@@ -1403,8 +1461,8 @@
   .build-stamp {
     text-align: center;
     font-size: 0.7rem;
+    /* No opacity dampening: --color-text-dim already clears AA on its own. */
     color: var(--color-text-dim);
-    opacity: 0.6;
     font-family: var(--font-family-mono);
     margin: 0.25rem 0 0.5rem;
   }
