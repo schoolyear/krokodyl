@@ -46,24 +46,33 @@ go run . --transfer-worker                  # run a transfer worker standalone (
 
 **Persistence** (settings.go, history.go). `settings.json` + `history.json` in the OS config dir, mode `0o600`. A stable per-install `MachineID` (UUID) lets the resend feature re-target the same device across renames. History caps at 50 terminal entries with transfer codes stripped. `historyMu` serializes disk writes; `sweepPartials` only deletes dirs whose basename starts with `partialDirPrefix` (defense against tampered settings).
 
-**Frontend** (frontend/src). Svelte 5 **runes** (`$state`/`$derived`) — most UI lives in one large `App.svelte`. Backend calls go through generated `wailsjs/` bindings; live updates arrive via `EventsOn` (`transfer:updated`, `transfer:overwrite`, `nearby:updated`, `nearby:state`, `nearby:offer`, `transfer:cleared`). svelte-i18n with 6 locales (en/nl/fr/es/hu/zh), theme store persisted to localStorage, `TitleBar.svelte` renders native Windows chrome + macOS traffic-light padding.
+**Frontend** (frontend/src). Svelte 5 **runes** (`$state`/`$derived`) — most UI lives in one large `App.svelte`. Backend calls go through generated `wailsjs/` bindings; live updates arrive via `EventsOn` (`transfer:updated`, `transfer:overwrite`, `transfer:verify`, `nearby:updated`, `nearby:state`, `nearby:offer`, `transfer:cleared`). Blocking user prompts (overwrite, verify) are keyed by per-prompt UUID through `registerOverwritePrompt`/`resolveOverwrite` — reuse that plumbing for new prompts. svelte-i18n with 6 locales (en/nl/fr/es/hu/zh), theme store persisted to localStorage, `TitleBar.svelte` renders native Windows chrome + macOS traffic-light padding.
 
 ## Frontend conventions
 
 - A11y is a maintained baseline (WCAG 2.1 AA). New interactive UI needs an `aria-label`, inherits the global `:focus-visible`, and ≥24px target size.
 - Modals use the `modalDialog` Svelte action (focus-trap + Escape + focus-restore) in App.svelte.
 - Tabs/segmented controls use roving `tabindex` on the items — a keydown handler on the `role=tablist` container trips `svelte-check` (`a11y_interactive_supports_focus`).
-- White-on-green text uses `--color-primary-strong`, not `--color-primary` (contrast).
+- Color tokens: green TEXT uses `--color-accent-text`; white text sits on `--color-primary-strong` / `--color-danger-strong` backgrounds — never raw `--color-primary`/`--color-red`. Verify any contrast claim by computing the WCAG ratio (a review once mis-measured a passing token as failing).
+- UI strings: add every key to ALL six locale files (`en nl fr es hu zh`) — svelte-i18n renders raw key ids for missing entries.
 
 ## Gotchas & constraints
 
+- **Nearby trust model:** cert pinning authenticates the channel, NOT the identity — human confirmation is the backstop. Peer-supplied display strings MUST pass `sanitizeDisplayName` at decode; nearby receives are verified against the accepted offer (`describeOfferMismatch`); peer resends are two-phase (`ResendTransfer` → NeedsConfirm → `ConfirmResend`). Don't add a path around these.
 - **No Apple notarization — hard constraint** (no Apple Developer account). macOS ships ad-hoc codesigned (`codesign --sign -`); users right-click → Open once. Don't add notarization steps.
 - **Windows GUI-subsystem stderr is invalid.** A `-H windowsgui` binary launched by double-click has a dead stderr handle; if a worker inherits it, croc's progress writes fail and stall the transfer. Worker `cmd.Stderr` MUST stay `nil`; the parent logs to a file via `bestEffortWriter`. **Terminal-launched runs have a valid stderr and hide this bug** — verify transfer changes by launching the built GUI, not `go run`. `cmd/guiharness` reproduces the exact scenario.
 - **Test nearby/transfer on TWO real machines.** Loopback / single-instance testing misses cross-network, "room not ready", and virtual-adapter (Hyper-V VM↔host) failures.
 - **`wailsjs/` is generated — never hand-edit.** Re-run the Wails generator when a Go struct exposed to the frontend changes.
 - **`stagingDirForCode` determinism is load-bearing.** Changing its hash/salt orphans every in-flight partial transfer; there is no version field, so any change is breaking.
 - **Linux build without `-tags webkit2_41`** builds against WebKit 4.0 and fails at runtime.
-- **`app.go` (~1190) and `App.svelte` (~1600) exceed the 800-line guideline** — extract when you touch them, don't keep growing them.
+- **`app.go` (~1400) and `App.svelte` (~1750) exceed the 800-line guideline** — extract when you touch them, don't keep growing them.
+- **Never `npm audit fix --force`** — it downgrades svelte-i18n breaking. The 5 esbuild-chain advisories are dev-server-only (the app ships static files); wait for vite to bump esbuild.
+
+## Testing notes
+
+- Unit tests must NEVER reach `runWorkerJob` — it spawns `os.Executable()` (the TEST binary) as a worker. Use `newTestApp()` (app_test.go) and injectable closures instead.
+- `App` methods that emit go through `a.emitEvent` (nil-ctx safe); raw `runtime.EventsEmit` panics in tests.
+- `recoveryBackoffFn` / `offerPromptWait` are package vars for collapsing waits in tests — tests that mutate them must not run parallel.
 
 ## Working in this repo (environment)
 
