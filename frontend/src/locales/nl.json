@@ -11,7 +11,12 @@
     "title": "Verstuur een Bestand",
     "description": "Selecteer een bestand om een veilige overdrachtscode te genereren.",
     "button": "Selecteer & Verstuur Bestand",
-    "button_sending": "Bezig met verzenden..."
+    "button_sending": "Bezig met verzenden...",
+    "drop_hint": "Sleep bestanden hierheen",
+    "drop_or": "of",
+    "button_browse": "Kies bestanden…",
+    "share_code": "Deel deze code met de ontvanger",
+    "code_hint": "Zij voeren hem in op hun Ontvangen-tabblad — de overdracht start automatisch."
   },
   "receive": {
     "title": "Ontvang een Bestand",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "Geschiedenis",
-    "empty_state": "Nog geen overdrachten. Verzend of ontvang een bestand om te beginnen!"
+    "empty_state": "Nog geen overdrachten. Verzend of ontvang een bestand om te beginnen!",
+    "clear": "Wissen",
+    "clear_confirm": "Alle overdrachtsgeschiedenis wissen? Dit kan niet ongedaan worden gemaakt.",
+    "clear_yes": "Geschiedenis wissen",
+    "cancel": "Annuleren",
+    "you_are": "Jij bent"
   },
   "transfer": {
     "unknown_file": "Onbekend Bestand",
     "code_label": "Code:",
-    "copy_prompt": "Klik om te kopiëren"
+    "copy_prompt": "Klik om te kopiëren",
+    "cancel": "Annuleren",
+    "resend": "Opnieuw versturen",
+    "resend_fallback": "{name} is niet in de buurt — wordt verzonden met een code"
   },
   "status": {
     "completed": "voltooid",
@@ -37,7 +50,9 @@
     "waiting": "wachten",
     "sending": "verzenden",
     "receiving": "ontvangen",
-    "preparing": "voorbereiden"
+    "preparing": "voorbereiden",
+    "cancelled": "geannuleerd",
+    "reconnecting": "Opnieuw verbinden…"
   },
   "toasts": {
     "transfer_completed": "Overdracht voltooid! 🎉",
@@ -49,7 +64,8 @@
     "missing_info": "Voer een code in en selecteer een bestemming.",
     "download_started": "Download wordt gestart...",
     "receive_failed": "Bestand ontvangen mislukt.",
-    "copied_to_clipboard": "Gekopieerd naar klembord! 👍"
+    "copied_to_clipboard": "Gekopieerd naar klembord! 👍",
+    "transfer_cancelled": "Overdracht geannuleerd."
   },
   "overwrite": {
     "title": "Bestand bestaat al",
@@ -57,6 +73,31 @@
     "current_size": "Huidige grootte",
     "new_size": "Nieuwe grootte",
     "yes": "Ja",
-    "no": "Nee"
+    "no": "Nee",
+    "current_modified": "Gewijzigd (huidig)",
+    "new_modified": "Gewijzigd (nieuw)"
+  },
+  "titlebar": {
+    "minimize": "Minimaliseren",
+    "maximize": "Maximaliseren",
+    "close": "Sluiten"
+  },
+  "nearby": {
+    "title": "Apparaten in de buurt",
+    "empty": "Geen apparaten gevonden — open krokodyl op de andere machine, zelfde netwerk.",
+    "unavailable": "Detectie is geblokkeerd op dit netwerk — deel in plaats daarvan een code.",
+    "soon": "Versturen naar apparaten komt in de volgende update",
+    "visible": "Zichtbaar voor anderen",
+    "hidden": "Verborgen — anderen zien je niet",
+    "recent": "recent"
+  },
+  "offer": {
+    "title": "Inkomende overdracht",
+    "from": "{name} wil je dit sturen:",
+    "accept": "Accepteren",
+    "decline": "Weigeren",
+    "to": "naar",
+    "from_label": "van",
+    "declined": "Overdracht geweigerd"
   }
 }

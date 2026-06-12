@@ -1,3 +1,6 @@
 build/bin
 node_modules
 frontend/dist
+
+# stray local build artifact
+/krokodyl.exe

@@ -11,7 +11,12 @@
     "title": "Envoyer un fichier",
     "description": "Sélectionnez un fichier pour générer un code de transfert sécurisé.",
     "button": "Sélectionner et envoyer le fichier",
-    "button_sending": "Envoi en cours..."
+    "button_sending": "Envoi en cours...",
+    "drop_hint": "Déposez vos fichiers ici",
+    "drop_or": "ou",
+    "button_browse": "Choisir des fichiers…",
+    "share_code": "Partagez ce code avec le destinataire",
+    "code_hint": "Il le saisit dans son onglet Recevoir — le transfert démarre automatiquement."
   },
   "receive": {
     "title": "Recevoir un fichier",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "Historique",
-    "empty_state": "Aucun transfert pour le moment. Envoyez ou recevez un fichier pour commencer !"
+    "empty_state": "Aucun transfert pour le moment. Envoyez ou recevez un fichier pour commencer !",
+    "clear": "Effacer",
+    "clear_confirm": "Effacer tout l’historique des transferts ? Action irréversible.",
+    "clear_yes": "Effacer l’historique",
+    "cancel": "Annuler",
+    "you_are": "Vous êtes"
   },
   "transfer": {
     "unknown_file": "Fichier inconnu",
     "code_label": "Code :",
-    "copy_prompt": "Cliquez pour copier"
+    "copy_prompt": "Cliquez pour copier",
+    "cancel": "Annuler",
+    "resend": "Renvoyer",
+    "resend_fallback": "{name} n’est pas à proximité — envoi avec un code"
   },
   "status": {
     "completed": "terminé",
@@ -37,7 +50,9 @@
     "waiting": "en attente",
     "sending": "envoi",
     "receiving": "réception",
-    "preparing": "préparation"
+    "preparing": "préparation",
+    "cancelled": "annulé",
+    "reconnecting": "Reconnexion…"
   },
   "toasts": {
     "transfer_completed": "Transfert terminé ! 🎉",
@@ -49,7 +64,8 @@
     "missing_info": "Veuillez saisir un code et sélectionner une destination.",
     "download_started": "Début du téléchargement...",
     "receive_failed": "Échec de la réception du fichier.",
-    "copied_to_clipboard": "Copié dans le presse-papiers ! 👍"
+    "copied_to_clipboard": "Copié dans le presse-papiers ! 👍",
+    "transfer_cancelled": "Transfert annulé."
   },
   "overwrite": {
     "title": "Le fichier existe",
@@ -57,6 +73,31 @@
     "current_size": "Taille actuelle",
     "new_size": "Nouvelle taille",
     "yes": "Oui",
-    "no": "Non"
+    "no": "Non",
+    "current_modified": "Modifié (actuel)",
+    "new_modified": "Modifié (nouveau)"
+  },
+  "titlebar": {
+    "minimize": "Réduire",
+    "maximize": "Agrandir",
+    "close": "Fermer"
+  },
+  "nearby": {
+    "title": "Appareils à proximité",
+    "empty": "Aucun appareil trouvé — ouvrez krokodyl sur l’autre machine, même réseau.",
+    "unavailable": "La découverte est bloquée sur ce réseau — partagez plutôt un code.",
+    "soon": "L’envoi vers les appareils arrive dans la prochaine mise à jour",
+    "visible": "Visible pour les autres",
+    "hidden": "Masqué — les autres ne vous voient pas",
+    "recent": "récent"
+  },
+  "offer": {
+    "title": "Transfert entrant",
+    "from": "{name} veut vous envoyer :",
+    "accept": "Accepter",
+    "decline": "Refuser",
+    "to": "vers",
+    "from_label": "de",
+    "declined": "Transfert refusé"
   }
 }

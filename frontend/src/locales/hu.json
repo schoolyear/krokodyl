@@ -11,7 +11,12 @@
     "title": "Fájl küldése",
     "description": "Válassz egy fájlt a biztonságos átvitelkód generálásához.",
     "button": "Fájl kiválasztása és küldése",
-    "button_sending": "Küldés..."
+    "button_sending": "Küldés...",
+    "drop_hint": "Húzd ide a fájlokat",
+    "drop_or": "vagy",
+    "button_browse": "Fájlok kiválasztása…",
+    "share_code": "Oszd meg ezt a kódot a fogadóval",
+    "code_hint": "Ő beírja a Fogadás fülön — az átvitel automatikusan elindul."
   },
   "receive": {
     "title": "Fájl fogadása",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "Előzmények",
-    "empty_state": "Még nincs átvitel. Küldj vagy fogadj egy fájlt a kezdéshez!"
+    "empty_state": "Még nincs átvitel. Küldj vagy fogadj egy fájlt a kezdéshez!",
+    "clear": "Törlés",
+    "clear_confirm": "Törlöd a teljes átviteli előzményt? Ez nem vonható vissza.",
+    "clear_yes": "Előzmény törlése",
+    "cancel": "Mégse",
+    "you_are": "Te vagy"
   },
   "transfer": {
     "unknown_file": "Ismeretlen fájl",
     "code_label": "Kód:",
-    "copy_prompt": "Kattints a másoláshoz"
+    "copy_prompt": "Kattints a másoláshoz",
+    "cancel": "Mégse",
+    "resend": "Újraküldés",
+    "resend_fallback": "{name} nincs a közelben — kóddal küldjük"
   },
   "status": {
     "completed": "befejezve",
@@ -37,7 +50,9 @@
     "waiting": "várakozik",
     "sending": "küldés",
     "receiving": "fogadás",
-    "preparing": "előkészítés"
+    "preparing": "előkészítés",
+    "cancelled": "megszakítva",
+    "reconnecting": "Újrakapcsolódás…"
   },
   "toasts": {
     "transfer_completed": "Átvitel befejezve! 🎉",
@@ -49,7 +64,8 @@
     "missing_info": "Kérlek, add meg a kódot és válaszd ki a célt.",
     "download_started": "Letöltés indítása...",
     "receive_failed": "Nem sikerült fogadni a fájlt.",
-    "copied_to_clipboard": "Vágólapra másolva! 👍"
+    "copied_to_clipboard": "Vágólapra másolva! 👍",
+    "transfer_cancelled": "Átvitel megszakítva."
   },
   "overwrite": {
     "title": "Fájl már létezik",
@@ -57,6 +73,31 @@
     "current_size": "Jelenlegi méret",
     "new_size": "Új méret",
     "yes": "Igen",
-    "no": "Nem"
+    "no": "Nem",
+    "current_modified": "Módosítva (jelenlegi)",
+    "new_modified": "Módosítva (új)"
+  },
+  "titlebar": {
+    "minimize": "Kis méret",
+    "maximize": "Teljes méret",
+    "close": "Bezárás"
+  },
+  "nearby": {
+    "title": "Közeli eszközök",
+    "empty": "Nincs eszköz — nyisd meg a krokodylt a másik gépen, azonos hálózaton.",
+    "unavailable": "A felderítés blokkolva van ezen a hálózaton — ossz meg kódot helyette.",
+    "soon": "Az eszközökre küldés a következő frissítésben érkezik",
+    "visible": "Látható mások számára",
+    "hidden": "Rejtett — mások nem látnak",
+    "recent": "legutóbbi"
+  },
+  "offer": {
+    "title": "Bejövő átvitel",
+    "from": "{name} ezt szeretné küldeni:",
+    "accept": "Elfogadás",
+    "decline": "Elutasítás",
+    "to": "ide:",
+    "from_label": "tőle:",
+    "declined": "Átvitel elutasítva"
   }
 }

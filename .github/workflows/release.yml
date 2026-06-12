@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -26,64 +27,67 @@ jobs:
             ext: ""
             name: krokodyl-macos
             build_flags: ""
-    
+
     runs-on: ${{ matrix.os }}
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
-          
+          go-version-file: go.mod
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          
+          node-version: '22'
+
       - name: Install system dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc libgtk-3-dev libwebkit2gtk-4.1-dev
-          
+
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-        
+        # Keep this version in sync with github.com/wailsapp/wails/v2 in go.mod
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
       - name: Install dependencies
         run: |
           cd frontend
           npm install
-          
+
       - name: Build application (macOS)
         if: matrix.os == 'macos-latest'
         run: wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }}
-        
+
       - name: Build application (Linux/Windows)
         if: matrix.os != 'macos-latest'
         run: wails build -platform ${{ matrix.platform }} ${{ matrix.build_flags }} -o krokodyl${{ matrix.ext }}
-        
+
       - name: Prepare macOS artifact
         if: matrix.os == 'macos-latest'
         run: |
           echo "Contents of build/bin directory:"
           ls -la build/bin/
-          
-          if [ -d "build/bin/krokodyl.app" ]; then
-            echo "Found .app bundle, creating tar.gz"
-            tar -czf krokodyl-macos.tar.gz -C build/bin krokodyl.app
-            mv krokodyl-macos.tar.gz build/bin/krokodyl-macos.tar.gz
-          elif [ -f "build/bin/krokodyl" ]; then
-            echo "Found krokodyl binary, renaming to krokodyl-macos"
-            mv build/bin/krokodyl build/bin/krokodyl-macos
-          else
-            echo "No expected output found, listing all files:"
-            find build/ -type f -name "*krokodyl*" || echo "No krokodyl files found"
+
+          if [ ! -d "build/bin/krokodyl.app" ]; then
+            echo "ERROR: build/bin/krokodyl.app not found - refusing to ship a bare binary"
+            find build/ -type f -name "*krokodyl*" || true
             exit 1
           fi
-        
+
+          # Ad-hoc signature (no Apple Developer account). Gives the bundle a
+          # stable identity so the right-click -> Open path works cleanly,
+          # including on Apple Silicon.
+          codesign --force --deep --sign - build/bin/krokodyl.app
+          codesign --verify --verbose build/bin/krokodyl.app
+
+          # ditto preserves the bundle structure and extended attributes.
+          ditto -c -k --keepParent build/bin/krokodyl.app build/bin/krokodyl-macos-universal.zip
+
       - name: Upload artifact (Linux/Windows)
         if: matrix.os != 'macos-latest'
         uses: actions/upload-artifact@v4
@@ -97,21 +101,23 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: build/bin/krokodyl-macos*
+          path: build/bin/krokodyl-macos-universal.zip
           retention-days: 1
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    # workflow_dispatch runs build artifacts only; releases come from tags.
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
-    
+
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          
+
       - name: Prepare release assets
         run: |
           mkdir -p release
@@ -125,18 +131,25 @@ jobs:
             cp artifacts/krokodyl-windows.exe/krokodyl.exe release/krokodyl-windows.exe
           fi
           # macOS
-          if [ -f "artifacts/krokodyl-macos/krokodyl-macos.tar.gz" ]; then
-            cp artifacts/krokodyl-macos/krokodyl-macos.tar.gz release/krokodyl-macos.tar.gz
-          elif [ -f "artifacts/krokodyl-macos/krokodyl-macos" ]; then
-            cp artifacts/krokodyl-macos/krokodyl-macos release/krokodyl-macos
-            chmod +x release/krokodyl-macos
+          if [ -f "artifacts/krokodyl-macos/krokodyl-macos-universal.zip" ]; then
+            cp artifacts/krokodyl-macos/krokodyl-macos-universal.zip release/krokodyl-macos-universal.zip
           fi
-          
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
           generate_release_notes: true
           fail_on_unmatched_files: false
+          body: |
+            ## Installing on macOS
+
+            The macOS app is not notarized, so macOS shows a warning on first launch:
+
+            1. Download and unzip `krokodyl-macos-universal.zip`
+            2. Right-click `krokodyl.app` → **Open** → **Open**
+
+            This is only needed once. If transfers misbehave, please attach
+            `~/Library/Caches/krokodyl/krokodyl.log` to your bug report.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,7 +11,12 @@
     "title": "Enviar un archivo",
     "description": "Seleccione un archivo para generar un código de transferencia seguro.",
     "button": "Seleccionar y enviar archivo",
-    "button_sending": "Enviando..."
+    "button_sending": "Enviando...",
+    "drop_hint": "Suelta tus archivos aquí",
+    "drop_or": "o",
+    "button_browse": "Elegir archivos…",
+    "share_code": "Comparte este código con el receptor",
+    "code_hint": "Lo introduce en su pestaña Recibir — la transferencia empieza automáticamente."
   },
   "receive": {
     "title": "Recibir un archivo",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "Historial",
-    "empty_state": "Aún no hay transferencias. ¡Envíe o reciba un archivo para empezar!"
+    "empty_state": "Aún no hay transferencias. ¡Envíe o reciba un archivo para empezar!",
+    "clear": "Borrar",
+    "clear_confirm": "¿Borrar todo el historial de transferencias? No se puede deshacer.",
+    "clear_yes": "Borrar historial",
+    "cancel": "Cancelar",
+    "you_are": "Eres"
   },
   "transfer": {
     "unknown_file": "Archivo desconocido",
     "code_label": "Código:",
-    "copy_prompt": "Haga clic para copiar"
+    "copy_prompt": "Haga clic para copiar",
+    "cancel": "Cancelar",
+    "resend": "Enviar de nuevo",
+    "resend_fallback": "{name} no está cerca — se envía con un código"
   },
   "status": {
     "completed": "completado",
@@ -37,7 +50,9 @@
     "waiting": "esperando",
     "sending": "enviando",
     "receiving": "recibiendo",
-    "preparing": "preparando"
+    "preparing": "preparando",
+    "cancelled": "cancelado",
+    "reconnecting": "Reconectando…"
   },
   "toasts": {
     "transfer_completed": "¡Transferencia completada! 🎉",
@@ -49,7 +64,8 @@
     "missing_info": "Por favor, introduzca un código y seleccione un destino.",
     "download_started": "Iniciando descarga...",
     "receive_failed": "Error al recibir el archivo.",
-    "copied_to_clipboard": "¡Copiado al portapapeles! 👍"
+    "copied_to_clipboard": "¡Copiado al portapapeles! 👍",
+    "transfer_cancelled": "Transferencia cancelada."
   },
   "overwrite": {
     "title": "El archivo ya existe",
@@ -57,6 +73,31 @@
     "current_size": "Tamaño actual",
     "new_size": "Nuevo tamaño",
     "yes": "Sí",
-    "no": "No"
+    "no": "No",
+    "current_modified": "Modificado (actual)",
+    "new_modified": "Modificado (nuevo)"
+  },
+  "titlebar": {
+    "minimize": "Minimizar",
+    "maximize": "Maximizar",
+    "close": "Cerrar"
+  },
+  "nearby": {
+    "title": "Dispositivos cercanos",
+    "empty": "No se encontraron dispositivos: abre krokodyl en la otra máquina, misma red.",
+    "unavailable": "La detección está bloqueada en esta red; comparte un código.",
+    "soon": "El envío a dispositivos llega en la próxima actualización",
+    "visible": "Visible para otros",
+    "hidden": "Oculto: otros no pueden verte",
+    "recent": "reciente"
+  },
+  "offer": {
+    "title": "Transferencia entrante",
+    "from": "{name} quiere enviarte:",
+    "accept": "Aceptar",
+    "decline": "Rechazar",
+    "to": "a",
+    "from_label": "de",
+    "declined": "Transferencia rechazada"
   }
 }

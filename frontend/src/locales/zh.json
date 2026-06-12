@@ -11,7 +11,12 @@
     "title": "发送文件",
     "description": "选择一个文件以生成安全传输代码。",
     "button": "选择并发送文件",
-    "button_sending": "发送中..."
+    "button_sending": "发送中...",
+    "drop_hint": "将文件拖放到这里",
+    "drop_or": "或",
+    "button_browse": "选择文件…",
+    "share_code": "将此代码分享给接收方",
+    "code_hint": "对方在接收页输入代码，传输会自动开始。"
   },
   "receive": {
     "title": "接收文件",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "历史",
-    "empty_state": "暂无传输。发送或接收文件以开始！"
+    "empty_state": "暂无传输。发送或接收文件以开始！",
+    "clear": "清除",
+    "clear_confirm": "清除所有传输历史？此操作无法撤销。",
+    "clear_yes": "清除历史",
+    "cancel": "取消",
+    "you_are": "你是"
   },
   "transfer": {
     "unknown_file": "未知文件",
     "code_label": "代码：",
-    "copy_prompt": "点击复制"
+    "copy_prompt": "点击复制",
+    "cancel": "取消",
+    "resend": "再次发送",
+    "resend_fallback": "{name} 不在附近——改用代码发送"
   },
   "status": {
     "completed": "已完成",
@@ -37,7 +50,9 @@
     "waiting": "等待中",
     "sending": "发送中",
     "receiving": "接收中",
-    "preparing": "准备中"
+    "preparing": "准备中",
+    "cancelled": "已取消",
+    "reconnecting": "正在重新连接…"
   },
   "toasts": {
     "transfer_completed": "传输完成！🎉",
@@ -49,7 +64,8 @@
     "missing_info": "请输入代码并选择目的地。",
     "download_started": "开始下载...",
     "receive_failed": "接收文件失败。",
-    "copied_to_clipboard": "已复制到剪贴板！👍"
+    "copied_to_clipboard": "已复制到剪贴板！👍",
+    "transfer_cancelled": "传输已取消。"
   },
   "overwrite": {
     "title": "文件已存在",
@@ -57,6 +73,31 @@
     "current_size": "当前大小",
     "new_size": "新大小",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "current_modified": "修改时间（当前）",
+    "new_modified": "修改时间（新）"
+  },
+  "titlebar": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "close": "关闭"
+  },
+  "nearby": {
+    "title": "附近的设备",
+    "empty": "未发现设备——请在另一台机器上打开 krokodyl（同一网络）。",
+    "unavailable": "当前网络阻止了设备发现——请改用代码。",
+    "soon": "发送到设备功能将在下次更新中推出",
+    "visible": "对他人可见",
+    "hidden": "已隐藏——其他人看不到你",
+    "recent": "最近"
+  },
+  "offer": {
+    "title": "收到传输请求",
+    "from": "{name} 想发送给你：",
+    "accept": "接受",
+    "decline": "拒绝",
+    "to": "发往",
+    "from_label": "来自",
+    "declined": "已拒绝传输"
   }
 }

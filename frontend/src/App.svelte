@@ -1,38 +1,93 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   // I18n imports
-  import { _, locale } from 'svelte-i18n';
-  import { setupi18n, supportedLocales } from './i18n';
-  import ThemeSwitcher from './components/ThemeSwitcher.svelte';
+  import { _ } from 'svelte-i18n';
+  import { setupi18n } from './i18n';
+  import TitleBar from './components/TitleBar.svelte';
   import { theme } from './stores/theme';
 
   // Wails imports
-  import { EventsOn } from '../wailsjs/runtime/runtime.js';
-  import { SendFile, ReceiveFile, GetTransfers, SelectFile, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite } from '../wailsjs/go/main/App.js';
+  import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
-  
+
   interface FileTransfer {
     id: string;
     name: string;
     files: string[];
     size: number;
     progress: number;
+    speed: number;
     status: string;
     code?: string;
+    peer?: string;
+    error?: string;
+    resendable?: boolean;
+    peerMachineId?: string;
+  }
+
+  interface NearbyOffer {
+    id: string;
+    senderName: string;
+    senderAddr: string;
+    files: string[];
+    size: number;
+  }
+
+  interface OverwritePrompt {
+    transferId: string;
+    fileName: string;
+    oldSize: number;
+    newSize: number;
+    oldModTime: string;
+    newModTime: string;
+  }
+
+  interface NearbyPeer {
+    id: string;
+    name: string;
+    addr: string;
+    machineId?: string;
   }
 
   let transfers: FileTransfer[] = $state([]);
+  let nearbyPeers: NearbyPeer[] = $state([]);
+  let discoveryAvailable = $state(true);
+  let nearbyOffer: NearbyOffer | null = $state(null);
+  let nearbyVisible = $state(true);
+  let lastPeerName = $state('');
+  let deviceName = $state('');
+  let buildStamp = $state('');
+  let showClearConfirm = $state(false);
+  // Per-row note shown when a "send again" can't proceed (e.g. device gone),
+  // so the feedback sits right where the user clicked, not just in a toast.
+  let resendNotes: Record<string, string> = $state({});
+
+  // Most recently used device first.
+  let sortedPeers = $derived(
+    [...nearbyPeers].sort((a, b) =>
+      Number(b.name === lastPeerName) - Number(a.name === lastPeerName)
+    )
+  );
   let receiveCode: string = $state('');
   let destinationPath: string = $state('');
   let activeTab: 'send' | 'receive' = $state('send');
   let isSending = $state(false);
   let isReceiving = $state(false);
+  let isDragOver = $state(false);
+  let platform = $state('');
   let toastMessage = $state('');
   let toastType: 'success' | 'error' | 'info' = $state('info');
   let toastTimeout: number;
-  let overwritePrompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; } | null = $state(null);
+  let overwritePrompt: OverwritePrompt | null = $state(null);
+
+  // The most recent send still waiting for a receiver — its code is the one
+  // thing the sender needs right now, so it gets the spotlight.
+  let waitingSend = $derived(
+    transfers.find(t => t.id.startsWith('send') && t.status === 'waiting' && t.code)
+  );
 
   // Initialize i18n and then render the component
   (async () => {
@@ -43,6 +98,15 @@
   onMount(() => {
     theme.init();
     const init = async () => {
+      try {
+        const env = await Environment();
+        platform = env.platform;
+        // Root class lets global CSS pick material-aware (translucent)
+        // surfaces on Windows and traffic-light padding on macOS.
+        document.documentElement.classList.add(`platform-${env.platform}`);
+      } catch (error) {
+        console.error('Could not detect platform', error);
+      }
       await loadTransfers();
       try {
         destinationPath = await GetDefaultDownloadPath();
@@ -75,12 +139,62 @@
         showToast($_('toasts.transfer_failed'), 'error');
         if (transfer.id.startsWith('send')) isSending = false;
         if (transfer.id.startsWith('receive')) isReceiving = false;
+      } else if (transfer.status === 'cancelled') {
+        showToast($_('toasts.transfer_cancelled'), 'info');
+        if (transfer.id.startsWith('send')) isSending = false;
+        if (transfer.id.startsWith('receive')) isReceiving = false;
       }
     });
 
-    EventsOn('transfer:overwrite', (prompt: { transferId: string; fileName: string; oldSize: number; newSize: number; diff: string; }) => {
+    EventsOn('transfer:overwrite', (prompt: OverwritePrompt) => {
       overwritePrompt = prompt;
     });
+
+    EventsOn('nearby:updated', (peers: NearbyPeer[]) => {
+      nearbyPeers = peers ?? [];
+      // A note saying "X isn't nearby" should clear itself the moment X
+      // comes back, restoring the Send again button on that row.
+      const ids = Object.keys(resendNotes);
+      if (ids.length === 0) return;
+      const machines = new Set(nearbyPeers.map(p => p.machineId).filter(Boolean));
+      const names = new Set(nearbyPeers.map(p => p.name));
+      const next: Record<string, string> = {};
+      for (const id of ids) {
+        const t = transfers.find(tr => tr.id === id);
+        const back = t && ((t.peerMachineId && machines.has(t.peerMachineId)) || (t.peer && names.has(t.peer)));
+        if (!back) next[id] = resendNotes[id];
+      }
+      resendNotes = next;
+    });
+
+    EventsOn('nearby:state', (state: { available: boolean }) => {
+      discoveryAvailable = state.available;
+    });
+
+    EventsOn('nearby:offer', (offer: NearbyOffer) => {
+      nearbyOffer = offer;
+    });
+
+    EventsOn('transfer:cleared', () => {
+      transfers = [];
+    });
+
+    GetNearbyPeers().then((peers: NearbyPeer[]) => {
+      nearbyPeers = peers ?? [];
+    }).catch(() => {});
+
+    GetNearbyPrefs().then((prefs: { visible: boolean; lastPeer: string }) => {
+      nearbyVisible = prefs.visible;
+      lastPeerName = prefs.lastPeer;
+    }).catch(() => {});
+
+    GetDeviceName().then((name: string) => {
+      deviceName = name;
+    }).catch(() => {});
+
+    GetBuildStamp().then((stamp: string) => {
+      buildStamp = stamp;
+    }).catch(() => {});
 
     return unsubscribe;
   });
@@ -89,17 +203,17 @@
     transfers = await GetTransfers();
   }
 
-  async function selectAndSendFile() {
+  async function browseAndSendFiles() {
     if (isSending) return;
     try {
-      const filePath = await SelectFile();
-      if (filePath) {
+      const filePaths = await SelectFiles();
+      if (filePaths && filePaths.length > 0) {
         showToast($_('toasts.file_selected'), 'info');
         isSending = true;
-        await SendFile(filePath);
+        await SendFiles(filePaths);
       }
     } catch (error) {
-      console.error('Error sending file:', error);
+      console.error('Error sending files:', error);
       showToast($_('toasts.select_file_failed'), 'error');
       isSending = false;
     }
@@ -136,12 +250,35 @@
     }
   }
 
-  function handleCodeInput(event: Event) {
-    const code = (event.target as HTMLInputElement).value;
-    const codeRegex = /^\d{4}-([a-zA-Z]+-){2}[a-zA-Z]+$/;
-    if (codeRegex.test(code)) {
-      receiveCode = code;
-      receiveFile();
+  // Auto-receive triggers only on explicit completion signals: a paste
+  // (a pasted code is complete by definition) or Enter. Keystroke-based
+  // detection cannot work — "0570-infant-chief-ab" already matches the
+  // pattern while the user is still typing the last word.
+  function tryAutoReceive(raw: string) {
+    const code = raw.trim();
+    const codeRegex = /^\d{4}(-[a-zA-Z]{2,}){3}$/;
+    if (!codeRegex.test(code) || isReceiving) return;
+    receiveCode = code;
+    receiveFile();
+  }
+
+  function handleCodePaste(event: ClipboardEvent) {
+    const pasted = event.clipboardData?.getData('text')?.trim() ?? '';
+    // Defer so bind:value has applied before we read/submit.
+    setTimeout(() => tryAutoReceive(pasted || receiveCode), 0);
+  }
+
+  function handleCodeKeydown(event: KeyboardEvent) {
+    if (event.key === 'Enter') tryAutoReceive(receiveCode);
+  }
+
+  async function cancelTransfer(id: string) {
+    try {
+      await CancelTransfer(id);
+      if (id.startsWith('send')) isSending = false;
+      if (id.startsWith('receive')) isReceiving = false;
+    } catch (error) {
+      console.error('Error cancelling transfer:', error);
     }
   }
 
@@ -153,13 +290,17 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
+  const ACTIVE_STATUSES = ['preparing', 'waiting', 'sending', 'receiving', 'reconnecting'];
+
   function getStatusInfo(status: string): { color: string; icon: string } {
     switch (status) {
       case 'completed': return { color: 'var(--color-green)', icon: '✅' };
       case 'error': return { color: 'var(--color-red)', icon: '❌' };
+      case 'cancelled': return { color: 'var(--color-text-dim)', icon: '🚫' };
       case 'waiting': return { color: 'var(--color-yellow)', icon: '⌛' };
       case 'sending':
       case 'receiving': return { color: 'var(--color-primary)', icon: '⏳' };
+      case 'reconnecting': return { color: 'var(--color-yellow)', icon: '🔄' };
       case 'preparing': return { color: 'var(--color-yellow)', icon: '⌛' };
       default: return { color: 'var(--color-text-dim)', icon: '❓' };
     }
@@ -187,76 +328,183 @@
       overwritePrompt = null;
     }
   }
+
+  async function sendToNearbyPeer(peer: NearbyPeer) {
+    if (isSending) return;
+    try {
+      const filePaths = await SelectFiles();
+      if (filePaths && filePaths.length > 0) {
+        await SendToPeer(peer.id, filePaths);
+        lastPeerName = peer.name;
+      }
+    } catch (error) {
+      console.error('Error sending to peer:', error);
+      showToast($_('toasts.select_file_failed'), 'error');
+    }
+  }
+
+  async function resendTransfer(id: string) {
+    // Clear any previous note on this row before retrying.
+    const { [id]: _omit, ...rest } = resendNotes;
+    resendNotes = rest;
+    try {
+      const outcome = await ResendTransfer(id);
+      if (outcome?.message) {
+        showToast(outcome.message, outcome.started ? 'success' : 'error');
+        if (!outcome.started) {
+          resendNotes = { ...resendNotes, [id]: outcome.message };
+        }
+      }
+    } catch (error) {
+      const message = String(error);
+      showToast(message, 'error');
+      resendNotes = { ...resendNotes, [id]: message };
+    }
+  }
+
+  async function confirmClearHistory() {
+    try {
+      await ClearHistory();
+    } catch (error) {
+      console.error('Error clearing history:', error);
+    }
+    showClearConfirm = false;
+  }
+
+  async function toggleNearbyVisible() {
+    nearbyVisible = !nearbyVisible;
+    try {
+      await SetNearbyVisible(nearbyVisible);
+    } catch (error) {
+      console.error('Error toggling visibility:', error);
+    }
+  }
+
+  async function handleOfferResponse(accept: boolean) {
+    if (nearbyOffer) {
+      await RespondToNearbyOffer(nearbyOffer.id, accept);
+      nearbyOffer = null;
+    }
+  }
 </script>
 
 {#if isReady}
-  <main>
-    <div class="header">
-      <h1>{$_('app.title')}</h1>
-      <p>{$_('app.subtitle')}</p>
-      <div class="header-controls">
-        <ThemeSwitcher />
-        <select class="lang-selector" bind:value={$locale}>
-          {#each supportedLocales as l}
-            <option value={l}>{l.toUpperCase()}</option>
-          {/each}
-        </select>
-      </div>
-    </div>
+  <div class="app-shell">
+    <TitleBar {platform} />
 
-    <div class="card">
-      <div class="tabs">
-        <button class="tab" class:active={activeTab === 'send'} onclick={() => activeTab = 'send'}>
-          <span>📤</span> {$_('tabs.send')}
+    <main class="scroll-area">
+    <section class="surface">
+      <div class="segmented" role="tablist">
+        <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} onclick={() => activeTab = 'send'}>
+          📤 {$_('tabs.send')}
         </button>
-        <button class="tab" class:active={activeTab === 'receive'} onclick={() => activeTab = 'receive'}>
-          <span>📥</span> {$_('tabs.receive')}
+        <button class="segment" class:active={activeTab === 'receive'} role="tab" id="tab-receive" aria-controls="panel-receive" aria-selected={activeTab === 'receive'} onclick={() => activeTab = 'receive'}>
+          📥 {$_('tabs.receive')}
         </button>
       </div>
 
-      <div class="tab-content">
-        {#if activeTab === 'send'}
-          <div class="action-section">
-            <h2>{$_('send.title')}</h2>
-            <p>{$_('send.description')}</p>
-            <button class="btn primary" onclick={selectAndSendFile} disabled={isSending}>
+      {#if activeTab === 'send'}
+        <div class="panel" id="panel-send" role="tabpanel" aria-labelledby="tab-send">
+          {#if waitingSend?.code}
+            <div class="code-spotlight">
+              <p class="code-label">{$_('send.share_code')}</p>
+              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} title={$_('transfer.copy_prompt')}>
+                <span class="code-value">{waitingSend.code}</span>
+                <span class="code-copy">⧉</span>
+              </button>
+              <p class="code-hint">{$_('send.code_hint')}</p>
+            </div>
+          {/if}
+
+          <div class="nearby">
+            <div class="nearby-header">
+              <p class="nearby-title">
+                {$_('nearby.title')}
+                {#if deviceName}<span class="nearby-self">· {$_('history.you_are')} {deviceName}</span>{/if}
+              </p>
+              <button class="visibility-toggle" class:hidden-state={!nearbyVisible} onclick={toggleNearbyVisible} title={nearbyVisible ? $_('nearby.visible') : $_('nearby.hidden')} aria-pressed={nearbyVisible}>
+                {nearbyVisible ? '👁' : '🙈'}
+              </button>
+            </div>
+            {#if !nearbyVisible}
+              <p class="nearby-state">{$_('nearby.hidden')}</p>
+            {/if}
+            {#if !discoveryAvailable}
+              <p class="nearby-state warn">{$_('nearby.unavailable')}</p>
+            {:else if nearbyPeers.length === 0}
+              <p class="nearby-state">{$_('nearby.empty')}</p>
+            {:else}
+              <div class="peer-chips">
+                {#each sortedPeers as peer (peer.id)}
+                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} title={peer.addr}>
+                    <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
+                    <span class="peer-name">{peer.name}</span>
+                    {#if peer.name === lastPeerName}
+                      <span class="peer-recent">{$_('nearby.recent')}</span>
+                    {/if}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          <div
+            class="drop-zone"
+            class:drag-over={isDragOver}
+            ondragover={(e) => { e.preventDefault(); isDragOver = true; }}
+            ondragleave={() => isDragOver = false}
+            ondrop={() => isDragOver = false}
+            role="region"
+            aria-label={$_('send.drop_hint')}
+          >
+            <div class="drop-glyph" aria-hidden="true">📂</div>
+            <p class="drop-hint">{$_('send.drop_hint')}</p>
+            <p class="drop-or">{$_('send.drop_or')}</p>
+            <button class="btn primary" onclick={browseAndSendFiles} disabled={isSending}>
               {#if isSending}
                 <div class="spinner"></div>
                 <span>{$_('send.button_sending')}</span>
               {:else}
-                <span>📁 {$_('send.button')}</span>
+                <span>{$_('send.button_browse')}</span>
               {/if}
             </button>
           </div>
-        {:else}
-          <div class="action-section">
-            <h2>{$_('receive.title')}</h2>
-            <p>{$_('receive.description')}</p>
-            <div class="input-group">
-              <input type="text" bind:value={receiveCode} oninput={handleCodeInput} placeholder={$_('receive.placeholder_code')} />
-            </div>
-            <div class="input-group destination-group">
-              <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
-              <button class="btn" onclick={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
-            </div>
-            <button class="btn primary" onclick={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
-              {#if isReceiving}
-                <div class="spinner"></div>
-                <span>{$_('receive.button_receiving')}</span>
-              {:else}
-                <span>📦 {$_('receive.button_receive')}</span>
-              {/if}
-            </button>
+        </div>
+      {:else}
+        <div class="panel" id="panel-receive" role="tabpanel" aria-labelledby="tab-receive">
+          <h2>{$_('receive.title')}</h2>
+          <p class="panel-description">{$_('receive.description')}</p>
+          <div class="input-group">
+            <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} spellcheck="false" autocomplete="off" />
           </div>
+          <div class="input-group destination-group">
+            <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} readonly />
+            <button class="btn" onclick={selectDestinationAndReceive}>{$_('receive.button_browse')}</button>
+          </div>
+          <button class="btn primary wide" onclick={receiveFile} disabled={isReceiving || !receiveCode || !destinationPath}>
+            {#if isReceiving}
+              <div class="spinner"></div>
+              <span>{$_('receive.button_receiving')}</span>
+            {:else}
+              <span>📦 {$_('receive.button_receive')}</span>
+            {/if}
+          </button>
+        </div>
+      {/if}
+    </section>
+
+    <section class="transfers-section">
+      <div class="history-header">
+        <h2>{$_('history.title')}</h2>
+        {#if transfers.length > 0}
+          <button class="history-clear" onclick={() => showClearConfirm = true}>
+            🗑 {$_('history.clear')}
+          </button>
         {/if}
       </div>
-    </div>
-
-    <div class="transfers-section">
-      <h2>{$_('history.title')}</h2>
       {#if transfers.length === 0}
         <div class="empty-state">
-          <p>🤷‍♀️</p>
+          <p>🐊</p>
           <p>{$_('history.empty_state')}</p>
         </div>
       {:else}
@@ -266,39 +514,63 @@
             <div class="transfer-item" style="--status-color: {statusInfo.color}">
               <div class="status-icon">{statusInfo.icon}</div>
               <div class="transfer-details">
-                <div class="filename">{transfer.name || $_('transfer.unknown_file')}</div>
-                <div class="file-list">
-                  {#if transfer.files}
+                <div class="filename">
+                  {transfer.name || $_('transfer.unknown_file')}
+                  {#if transfer.peer}
+                    <span class="peer-label">{transfer.id.startsWith('send') ? $_('offer.to') : $_('offer.from_label')} {transfer.peer}</span>
+                  {/if}
+                </div>
+                {#if transfer.status === 'error' && transfer.error}
+                  <div class="error-text">{transfer.error}</div>
+                {/if}
+                {#if transfer.files && transfer.files.length > 1}
+                  <div class="file-list">
                     {#each transfer.files as file}
                       <span>{file}</span>
                     {/each}
-                  {/if}
-                </div>
-                <div class="file-size">{formatFileSize(transfer.size)}</div>
-                {#if transfer.code}
-                  <div class="code-container">
-                    <span>{$_('transfer.code_label')}</span>
-                    <strong class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} onkeydown={(e) => { if (e.key === 'Enter' && transfer.code) copyToClipboard(transfer.code); }} role="button" tabindex="0" title={$_('transfer.copy_prompt')}>
-                      {transfer.code}
-                    </strong>
                   </div>
                 {/if}
+                <div class="file-meta">
+                  <span>{formatFileSize(transfer.size)}</span>
+                  {#if transfer.code && transfer.status === 'waiting'}
+                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} title={$_('transfer.copy_prompt')}>
+                      {transfer.code}
+                    </button>
+                  {/if}
+                </div>
               </div>
               <div class="transfer-status">
                 <div class="status-text">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
                 <div class="progress-bar">
                   <div class="progress-fill" style="width: {transfer.progress}%"></div>
                 </div>
-                <div class="progress-text">{transfer.progress}%</div>
+                <div class="progress-text">
+                  {transfer.progress}%{transfer.speed > 0 ? ` · ${formatFileSize(transfer.speed)}/s` : ''}
+                </div>
+                {#if ACTIVE_STATUSES.includes(transfer.status)}
+                  <button class="btn cancel-btn" onclick={() => cancelTransfer(transfer.id)}>
+                    ✕ {$_('transfer.cancel')}
+                  </button>
+                {:else if resendNotes[transfer.id]}
+                  <div class="resend-note">{resendNotes[transfer.id]}</div>
+                {:else if transfer.resendable}
+                  <button class="btn resend-btn" onclick={() => resendTransfer(transfer.id)} title={$_('transfer.resend')}>
+                    ↻ {$_('transfer.resend')}
+                  </button>
+                {/if}
               </div>
             </div>
           {/each}
         </div>
       {/if}
-    </div>
-  </main>
+    </section>
+
+    {#if buildStamp}
+      <p class="build-stamp">build {buildStamp}</p>
+    {/if}
+    </main>
+  </div>
 {:else}
-  <!-- You can place a more sophisticated loading spinner here -->
   <div class="loading-state">
     <div class="spinner"></div>
     <p>Loading application...</p>
@@ -309,6 +581,44 @@
 {#if toastMessage}
   <div class="toast" class:success={toastType === 'success'} class:error={toastType === 'error'}>
     {toastMessage}
+  </div>
+{/if}
+
+{#if showClearConfirm}
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h2>{$_('history.clear')}</h2>
+      <p>{$_('history.clear_confirm')}</p>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => showClearConfirm = false}>{$_('history.cancel')}</button>
+        <button class="btn danger" onclick={confirmClearHistory}>{$_('history.clear_yes')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if nearbyOffer}
+  <div class="modal-backdrop">
+    <div class="modal">
+      <h2>{$_('offer.title')}</h2>
+      <p>{$_('offer.from', { values: { name: nearbyOffer.senderName }})}</p>
+      <div class="file-diff offer-files">
+        {#each nearbyOffer.files.slice(0, 8) as file}
+          <div><span>{file}</span></div>
+        {/each}
+        {#if nearbyOffer.files.length > 8}
+          <div><span>… +{nearbyOffer.files.length - 8}</span></div>
+        {/if}
+        <div>
+          <strong>{formatFileSize(nearbyOffer.size)}</strong>
+          <span class="offer-addr">{nearbyOffer.senderAddr}</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => handleOfferResponse(false)}>{$_('offer.decline')}</button>
+        <button class="btn primary" onclick={() => handleOfferResponse(true)}>{$_('offer.accept')}</button>
+      </div>
+    </div>
   </div>
 {/if}
 
@@ -328,8 +638,15 @@
           <strong>{$_('overwrite.new_size')}:</strong>
           <span>{formatFileSize(overwritePrompt.newSize)}</span>
         </div>
+        <div>
+          <strong>{$_('overwrite.current_modified')}:</strong>
+          <span>{overwritePrompt.oldModTime}</span>
+        </div>
+        <div>
+          <strong>{$_('overwrite.new_modified')}:</strong>
+          <span>{overwritePrompt.newModTime}</span>
+        </div>
       </div>
-      <pre class="diff-box">{overwritePrompt.diff}</pre>
       <div class="modal-actions">
         <button class="btn" onclick={() => handleOverwriteResponse('no')}>{$_('overwrite.no')}</button>
         <button class="btn primary" onclick={() => handleOverwriteResponse('yes')}>{$_('overwrite.yes')}</button>
@@ -339,208 +656,298 @@
 {/if}
 
 <style>
-  .modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
+  /* App shell: a fixed-height column so the window chrome strip stays put
+     and only the content area scrolls — the page scrollbar never runs
+     alongside the titlebar. */
+  .app-shell {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
   }
 
-  .modal {
-    background-color: var(--color-bg-light);
-    padding: 1.5rem;
-    border-radius: var(--border-radius);
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
-    width: 100%;
-    max-width: min(400px, calc(100vw - 2rem));
-    text-align: center;
-  }
-
-  .modal h2 {
-    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
-    margin-bottom: 0.75rem;
-  }
-
-  .modal p {
-    color: var(--color-text-dim);
-    margin-bottom: 1rem;
-  }
-
-  .file-diff {
-    text-align: left;
-    margin-bottom: 1.5rem;
-    background-color: var(--color-bg);
-    padding: 0.75rem;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--color-border);
-  }
-
-  .file-diff div {
-    display: flex;
-    justify-content: space-between;
-    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
-  }
-
-  .file-diff div:not(:last-child) {
-    margin-bottom: 0.5rem;
-  }
-
-  .diff-box {
-    background-color: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--border-radius);
-    padding: 0.75rem;
-    margin-top: 1rem;
-    max-height: 150px;
+  .scroll-area {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    text-align: left;
-    white-space: pre-wrap;
-    word-break: break-all;
-    font-family: monospace;
-    font-size: 0.8rem;
-  }
-
-  .modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-  }
-
-  /* --- Add styles for new elements --- */
-  .lang-selector {
-    margin-top: 0.5rem;
-    padding: 0.375rem;
-    border-radius: var(--border-radius);
-    border: 1px solid var(--color-border);
-    background-color: var(--color-bg-light);
-    color: var(--color-text);
-    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
-    min-width: 70px;
-  }
-
-  .loading-state {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: 100vh;
-    gap: 1rem;
+    padding: clamp(0.75rem, 2vw, 1.5rem);
+    gap: clamp(1rem, 2.5vw, 1.75rem);
   }
 
-  .loading-state .spinner {
-    width: 2rem;
-    height: 2rem;
-  }
-
-  /* --- All previous styles remain the same --- */
-  main {
-    display: grid;
-    grid-template-rows: auto auto 1fr;
-    align-items: start;
-    padding: 0.75rem;
-    gap: 1rem;
-    min-height: 100vh;
-    /* Remove fixed height and overflow hidden to allow scrolling */
-    transition: var(--transition);
-  }
-
-  .header {
-    text-align: center;
-    padding: 0;
-    position: relative;
-  }
-
-  .header-controls {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .header h1 {
-    font-size: clamp(1.75rem, 4vw, 2.5rem);
-    font-weight: 800;
-    color: var(--color-text);
-    margin-bottom: 0.25rem;
-  }
-
-  .header p {
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
-    color: var(--color-text-dim);
-    margin-bottom: 0.25rem;
-  }
-
-  .card {
+  /* --- Main surface --- */
+  .surface {
     width: 100%;
-    max-width: min(500px, calc(100vw - 1.5rem));
-    background-color: var(--color-bg-light);
-    border-radius: var(--border-radius);
-    border: 1px solid var(--color-border);
-    overflow: hidden;
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    max-width: 560px;
     justify-self: center;
+    background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
 
-  .tabs {
+  .segmented {
     display: flex;
     background-color: var(--color-bg-lighter);
-    overflow-x: auto;
+    border-radius: var(--border-radius);
+    padding: 0.25rem;
+    gap: 0.25rem;
   }
 
-  .tab {
+  .segment {
     flex: 1;
-    min-width: 120px;
-    padding: 0.75rem 0.5rem;
+    padding: 0.5rem 0.75rem;
     background: none;
     border: none;
+    border-radius: var(--radius-sm);
     color: var(--color-text-dim);
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
-    font-weight: 600;
+    font-size: clamp(0.875rem, 2.5vw, 0.95rem);
+    font-weight: 700;
     cursor: pointer;
     transition: var(--transition);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem;
-    border-bottom: 2px solid transparent;
     white-space: nowrap;
   }
 
-  .tab:hover {
+  .segment:hover {
     color: var(--color-text);
   }
 
-  .tab.active {
+  .segment.active {
+    background-color: var(--color-bg-light);
     color: var(--color-primary);
-    border-bottom-color: var(--color-primary);
+    box-shadow: var(--shadow-1);
   }
 
-  .tab-content {
-    padding: 0.75rem;
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
   }
 
-  .action-section h2 {
-    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
-    margin-bottom: 0.375rem;
+  .panel h2 {
+    font-size: clamp(1.05rem, 3vw, 1.25rem);
   }
 
-  .action-section p {
+  .panel-description {
     color: var(--color-text-dim);
-    margin-bottom: 0.75rem;
     font-size: clamp(0.8rem, 2.2vw, 0.9rem);
   }
 
+  /* --- Nearby devices --- */
+  .nearby {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: left;
+  }
+
+  .nearby-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .nearby-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-dim);
+  }
+
+  .visibility-toggle {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.125rem 0.375rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .visibility-toggle:hover {
+    border-color: var(--color-primary);
+  }
+
+  .visibility-toggle.hidden-state {
+    opacity: 0.6;
+  }
+
+  .peer-recent {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-primary);
+    background-color: var(--color-primary-soft);
+    padding: 0.1rem 0.375rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .nearby-state {
+    font-size: clamp(0.75rem, 2.2vw, 0.85rem);
+    color: var(--color-text-dim);
+  }
+
+  .nearby-state.warn {
+    color: var(--color-yellow);
+  }
+
+  .peer-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .peer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem 0.375rem 0.375rem;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    max-width: 100%;
+    color: var(--color-text);
+    font-family: inherit;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .peer-chip:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    background-color: var(--color-primary-soft);
+    transform: translateY(-1px);
+  }
+
+  .peer-chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .peer-monogram {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background-color: var(--color-primary-soft);
+    color: var(--color-primary);
+    font-weight: 800;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+
+  .peer-name {
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* --- Drop zone --- */
+  .drop-zone {
+    --wails-drop-target: drop;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: clamp(1.5rem, 5vw, 2.5rem) 1rem;
+    border: 2px dashed var(--color-border);
+    border-radius: var(--border-radius);
+    background-color: var(--color-bg);
+    transition: border-color var(--duration-fast) var(--ease-out),
+                background-color var(--duration-fast) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+  }
+
+  .drop-zone.drag-over {
+    border-color: var(--color-primary);
+    border-style: solid;
+    background-color: var(--color-primary-soft);
+    transform: scale(1.01);
+  }
+
+  .drop-glyph {
+    font-size: 2.25rem;
+    opacity: 0.9;
+  }
+
+  .drop-hint {
+    font-weight: 700;
+    font-size: clamp(0.95rem, 2.5vw, 1.05rem);
+  }
+
+  .drop-or {
+    color: var(--color-text-dim);
+    font-size: 0.8rem;
+  }
+
+  /* --- Code spotlight --- */
+  .code-spotlight {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    background-color: var(--color-primary-soft);
+    border: 1px solid var(--color-primary);
+  }
+
+  .code-label {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--color-text);
+  }
+
+  .code-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1rem;
+    border: none;
+    border-radius: var(--border-radius);
+    background-color: var(--color-bg);
+    color: var(--color-primary);
+    font-family: var(--font-family-mono);
+    font-size: clamp(0.95rem, 2.8vw, 1.15rem);
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--shadow-1);
+    transition: var(--transition);
+    word-break: break-all;
+  }
+
+  .code-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
+  }
+
+  .code-copy {
+    opacity: 0.7;
+  }
+
+  .code-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-dim);
+  }
+
+  /* --- Inputs --- */
   .input-group {
-    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
   }
 
   .input-group input {
@@ -554,15 +961,19 @@
     transition: var(--transition);
   }
 
+  .code-input {
+    font-family: var(--font-family-mono);
+    text-align: center;
+    letter-spacing: 0.03em;
+  }
+
   .input-group input:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 3px var(--color-primary-soft);
   }
 
   .destination-group {
-    display: flex;
-    gap: 0.5rem;
     flex-wrap: wrap;
   }
 
@@ -575,26 +986,30 @@
     white-space: nowrap;
   }
 
+  /* --- Buttons --- */
   .btn {
-    padding: 0.75rem 1rem;
+    padding: 0.7rem 1rem;
     border: none;
     border-radius: var(--border-radius);
     cursor: pointer;
     font-size: clamp(0.875rem, 2.5vw, 1rem);
-    font-weight: 600;
+    font-weight: 700;
     transition: var(--transition);
     background-color: var(--color-bg-lighter);
     color: var(--color-text);
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    text-align: center;
     justify-content: center;
-    min-height: 44px; /* Minimum touch target size */
+    min-height: 44px;
   }
 
   .btn:hover {
     background-color: var(--color-border);
+  }
+
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
   }
 
   .btn:disabled {
@@ -604,11 +1019,18 @@
 
   .btn.primary {
     background-color: var(--color-primary);
-    color: white;
+    color: #fff;
+    box-shadow: var(--shadow-1);
   }
 
   .btn.primary:hover:not(:disabled) {
     background-color: var(--color-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
+  }
+
+  .btn.wide {
+    width: 100%;
   }
 
   .spinner {
@@ -624,38 +1046,72 @@
     to { transform: rotate(360deg); }
   }
 
+  /* --- History --- */
   .transfers-section {
     width: 100%;
-    max-width: min(700px, calc(100vw - 1.5rem));
-    padding: 0;
+    max-width: 700px;
     justify-self: center;
     display: flex;
     flex-direction: column;
-    /* Allow section to grow/shrink naturally */
-    min-height: 200px;
-    margin-bottom: 1rem; /* Add bottom margin for mobile scrolling */
+    min-height: 160px;
+    margin-bottom: 1rem;
+  }
+
+  .history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.625rem;
   }
 
   .transfers-section h2 {
-    font-size: clamp(1.125rem, 3.5vw, 1.375rem);
-    margin-bottom: 0.75rem;
+    font-size: clamp(1rem, 3vw, 1.15rem);
     text-align: left;
-    flex-shrink: 0;
+  }
+
+  .history-clear {
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-dim);
+    font-size: clamp(0.75rem, 2vw, 0.85rem);
+    font-weight: 600;
+    padding: 0.3rem 0.625rem;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .history-clear:hover {
+    border-color: var(--color-red);
+    color: var(--color-red);
+  }
+
+  .btn.danger {
+    background-color: var(--color-red);
+    color: #fff;
+  }
+
+  .nearby-self {
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--color-primary);
   }
 
   .empty-state {
     background-color: var(--color-bg-light);
     border: 2px dashed var(--color-border);
     border-radius: var(--border-radius);
-    padding: 1rem;
+    padding: 1.25rem;
     text-align: center;
     color: var(--color-text-dim);
-    flex-shrink: 0;
   }
 
   .empty-state p:first-child {
-    font-size: clamp(1.5rem, 6vw, 2.5rem);
+    font-size: clamp(1.5rem, 6vw, 2.25rem);
     margin-bottom: 0.5rem;
+    opacity: 0.7;
   }
 
   .empty-state p:last-child {
@@ -665,10 +1121,9 @@
   .transfer-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    /* Remove overflow hidden to allow natural content flow */
-    max-height: 400px; /* Limit height on larger screens */
-    overflow-y: auto; /* Allow scrolling within transfer list if needed */
+    gap: 0.625rem;
+    max-height: 420px;
+    overflow-y: auto;
   }
 
   .transfer-item {
@@ -677,9 +1132,18 @@
     align-items: center;
     gap: 0.75rem;
     background-color: var(--color-bg-light);
+    border: 1px solid var(--color-border);
     border-radius: var(--border-radius);
     padding: 0.75rem;
     border-left: 4px solid var(--status-color);
+    box-shadow: var(--shadow-1);
+    transition: transform var(--duration-fast) var(--ease-out),
+                box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .transfer-item:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-2);
   }
 
   @media (max-width: 600px) {
@@ -687,13 +1151,13 @@
       grid-template-columns: auto 1fr;
       gap: 0.5rem;
     }
-    
+
     .transfer-status {
       grid-column: 1 / -1;
       text-align: left;
       margin-top: 0.5rem;
     }
-    
+
     .progress-bar {
       width: 100%;
       max-width: 200px;
@@ -706,47 +1170,73 @@
 
   .transfer-details {
     text-align: left;
+    min-width: 0;
   }
 
   .filename {
+    font-weight: 700;
+    font-size: clamp(0.875rem, 2.5vw, 0.95rem);
+    word-break: break-word;
+  }
+
+  .peer-label {
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
     font-weight: 600;
-    color: var(--color-text);
-    font-size: clamp(0.875rem, 2.5vw, 1rem);
+    color: var(--color-primary);
+    margin-left: 0.375rem;
+  }
+
+  .offer-files div {
+    justify-content: flex-start;
+  }
+
+  .offer-files div:last-child {
+    justify-content: space-between;
+    margin-top: 0.375rem;
+  }
+
+  .offer-addr {
+    color: var(--color-text-dim);
+    font-family: var(--font-family-mono);
+    font-size: 0.75rem;
+  }
+
+  .error-text {
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
+    color: var(--color-red);
+    margin-top: 0.25rem;
     word-break: break-word;
   }
 
   .file-list {
-    font-size: clamp(0.75rem, 2vw, 0.875rem);
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
     color: var(--color-text-dim);
     display: flex;
     flex-direction: column;
+    margin-top: 0.125rem;
   }
 
-  .file-size {
-    font-size: clamp(0.75rem, 2vw, 0.875rem);
-    color: var(--color-text-dim);
-    margin-top: 0.25rem;
-  }
-
-  .code-container {
+  .file-meta {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.5rem;
-    font-size: clamp(0.75rem, 2vw, 0.875rem);
-    color: var(--color-text-dim);
     flex-wrap: wrap;
+    margin-top: 0.25rem;
+    font-size: clamp(0.75rem, 2vw, 0.85rem);
+    color: var(--color-text-dim);
   }
 
   .code {
-    font-family: monospace;
+    font-family: var(--font-family-mono);
+    font-weight: 700;
     background-color: var(--color-bg);
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
+    border: none;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
     color: var(--color-primary);
     cursor: pointer;
     word-break: break-all;
-    font-size: clamp(0.75rem, 2vw, 0.875rem);
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
   }
 
   .code:hover {
@@ -758,15 +1248,10 @@
   }
 
   .status-text {
-    font-size: clamp(0.75rem, 2vw, 0.875rem);
-    font-weight: 600;
+    font-size: clamp(0.75rem, 2vw, 0.85rem);
+    font-weight: 700;
     text-transform: capitalize;
     color: var(--status-color);
-  }
-
-  .progress-text {
-    font-size: clamp(0.7rem, 2vw, 0.75rem);
-    color: var(--color-text-dim);
   }
 
   .progress-bar {
@@ -784,6 +1269,44 @@
     transition: width 0.3s ease;
   }
 
+  .progress-text {
+    font-size: clamp(0.7rem, 2vw, 0.75rem);
+    color: var(--color-text-dim);
+  }
+
+  .cancel-btn {
+    margin-top: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    min-height: unset;
+    font-size: clamp(0.7rem, 2vw, 0.8rem);
+  }
+
+  .resend-btn {
+    margin-top: 0.25rem;
+    padding: 0.3rem 0.625rem;
+    min-height: unset;
+    font-size: clamp(0.72rem, 2vw, 0.82rem);
+    font-weight: 700;
+    background-color: var(--color-primary-soft);
+    color: var(--color-primary);
+    border: 1px solid var(--color-primary);
+  }
+
+  .resend-btn:hover {
+    background-color: var(--color-primary);
+    color: #fff;
+  }
+
+  .resend-note {
+    margin-top: 0.25rem;
+    max-width: 220px;
+    font-size: clamp(0.68rem, 1.8vw, 0.76rem);
+    color: var(--color-text-dim);
+    text-align: right;
+    line-height: 1.35;
+  }
+
+  /* --- Toast --- */
   .toast {
     position: fixed;
     bottom: 2rem;
@@ -791,11 +1314,11 @@
     transform: translateX(-50%);
     background-color: var(--color-primary);
     color: white;
-    padding: 1rem 2rem;
+    padding: 0.875rem 1.5rem;
     border-radius: var(--border-radius);
-    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+    box-shadow: var(--shadow-2);
     z-index: 100;
-    animation: fade-in-out 3s ease-in-out forwards;
+    animation: fade-in-out 3s var(--ease-out) forwards;
     max-width: calc(100vw - 4rem);
     font-size: clamp(0.875rem, 2.5vw, 1rem);
     text-align: center;
@@ -810,177 +1333,212 @@
   }
 
   @keyframes fade-in-out {
-    0% {
-      opacity: 0;
-      transform: translate(-50%, 20px);
-    }
-    10% {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-    90% {
-      opacity: 1;
-      transform: translate(-50%, 0);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, 20px);
-    }
+    0% { opacity: 0; transform: translate(-50%, 20px); }
+    10% { opacity: 1; transform: translate(-50%, 0); }
+    90% { opacity: 1; transform: translate(-50%, 0); }
+    100% { opacity: 0; transform: translate(-50%, 20px); }
   }
 
-  /* Additional responsive improvements */
+  /* --- Modal --- */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background-color: var(--color-bg-light);
+    padding: 1.5rem;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-2);
+    width: 100%;
+    max-width: min(420px, calc(100vw - 2rem));
+    text-align: center;
+  }
+
+  .modal h2 {
+    font-size: clamp(1.1rem, 3.5vw, 1.3rem);
+    margin-bottom: 0.75rem;
+  }
+
+  .modal p {
+    color: var(--color-text-dim);
+    margin-bottom: 1rem;
+    word-break: break-word;
+  }
+
+  .file-diff {
+    text-align: left;
+    background-color: var(--color-bg);
+    padding: 0.75rem;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--color-border);
+  }
+
+  .file-diff div {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: clamp(0.75rem, 2.2vw, 0.85rem);
+  }
+
+  .file-diff div:not(:last-child) {
+    margin-bottom: 0.5rem;
+  }
+
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 1.25rem;
+  }
+
+  .build-stamp {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--color-text-dim);
+    opacity: 0.6;
+    font-family: var(--font-family-mono);
+    margin: 0.25rem 0 0.5rem;
+  }
+
+  /* --- Loading --- */
+  .loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 1rem;
+  }
+
+  .loading-state .spinner {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  /* --- Small screens --- */
   @media (max-width: 480px) {
-    main {
-      padding: 0.5rem;
-      gap: 0.75rem;
-    }
-    
-    .header h1 {
-      margin-bottom: 0.125rem;
-    }
-    
-    .header p {
-      margin-bottom: 0.125rem;
-    }
-    
     .destination-group {
       flex-direction: column;
     }
-    
+
     .destination-group input {
       min-width: unset;
     }
-    
+
     .toast {
       bottom: 1rem;
       padding: 0.75rem 1rem;
     }
-    
+
     .transfer-list {
-      max-height: none; /* Remove height limit on mobile */
+      max-height: none;
     }
   }
 
-  @media (max-width: 360px) {
-    .tab {
-      padding: 0.5rem 0.25rem;
+  /* --- Phone-shaped windows --- */
+  @media (max-width: 380px) {
+    .segment {
+      padding: 0.45rem 0.4rem;
       font-size: 0.8rem;
     }
-    
-    .btn {
+
+    .surface {
+      padding: 0.75rem;
+    }
+
+    .drop-zone {
+      padding: 1.25rem 0.75rem;
+    }
+
+    .drop-glyph {
+      font-size: 1.75rem;
+    }
+
+    .code-chip {
+      font-size: 0.9rem;
       padding: 0.5rem 0.75rem;
-      font-size: 0.8rem;
     }
-    
+
+    .input-group {
+      flex-wrap: wrap;
+    }
+
+    .modal {
+      padding: 1rem;
+    }
+
+    .file-diff div {
+      flex-direction: column;
+      gap: 0.125rem;
+    }
+
     .transfer-item {
       padding: 0.5rem;
       gap: 0.5rem;
     }
   }
 
-  /* Ensure content is accessible on very short screens */
-  @media (max-height: 600px) {
-    main {
+  /* --- Short windows --- */
+  @media (max-height: 560px) {
+    .scroll-area {
+      gap: 0.625rem;
+      padding: 0.625rem;
+    }
+
+    .surface {
+      padding: 0.75rem;
+      gap: 0.625rem;
+    }
+
+    .panel {
       gap: 0.5rem;
     }
-    
-    .header h1 {
-      font-size: clamp(1.5rem, 4vw, 2rem);
-      margin-bottom: 0.125rem;
+
+    .drop-zone {
+      padding: 1rem 0.75rem;
+      gap: 0.375rem;
     }
-    
-    .header p {
-      font-size: clamp(0.75rem, 2vw, 0.875rem);
-      margin-bottom: 0.125rem;
+
+    .drop-glyph {
+      font-size: 1.5rem;
     }
-    
-    .lang-selector {
-      margin-top: 0.25rem;
+
+    .code-spotlight {
+      padding: 0.625rem;
+      gap: 0.375rem;
     }
-    
-    .action-section h2 {
-      font-size: clamp(1rem, 3vw, 1.25rem);
-      margin-bottom: 0.25rem;
+
+    .code-hint {
+      display: none;
     }
-    
-    .action-section p {
-      font-size: clamp(0.75rem, 2vw, 0.825rem);
-      margin-bottom: 0.5rem;
-    }
-    
-    .empty-state {
-      padding: 0.75rem;
-    }
-    
-    .empty-state p:first-child {
-      font-size: clamp(1.25rem, 5vw, 2rem);
-      margin-bottom: 0.25rem;
-    }
-    
-    .tab-content {
-      padding: 0.5rem;
-    }
-    
-    .input-group {
-      margin-bottom: 0.5rem;
-    }
-    
+
     .transfers-section {
-      min-height: 150px;
+      min-height: 100px;
     }
   }
 
-  /* Extra small height optimization */
-  @media (max-height: 400px) {
-    main {
-      gap: 0.25rem;
+  /* --- Large displays --- */
+  @media (min-width: 1600px) {
+    .scroll-area {
+      max-width: 1000px;
+      align-self: center;
     }
-    
-    .header {
-      padding: 0;
+
+    .surface {
+      max-width: 620px;
     }
-    
-    .header h1 {
-      font-size: clamp(1.25rem, 4vw, 1.75rem);
-      margin-bottom: 0;
-    }
-    
-    .header p {
-      font-size: clamp(0.7rem, 2vw, 0.8rem);
-      margin-bottom: 0;
-    }
-    
-    .lang-selector {
-      margin-top: 0.125rem;
-      padding: 0.25rem;
-      font-size: 0.75rem;
-    }
-    
-    .tab-content {
-      padding: 0.375rem;
-    }
-    
-    .action-section h2 {
-      font-size: clamp(0.9rem, 3vw, 1.1rem);
-      margin-bottom: 0.125rem;
-    }
-    
-    .action-section p {
-      font-size: clamp(0.7rem, 2vw, 0.75rem);
-      margin-bottom: 0.375rem;
-    }
-    
-    .input-group {
-      margin-bottom: 0.375rem;
-    }
-    
-    .transfers-section h2 {
-      font-size: clamp(0.9rem, 3vw, 1.1rem);
-      margin-bottom: 0.375rem;
-    }
-    
+
     .transfers-section {
-      min-height: 100px;
+      max-width: 820px;
     }
   }
 </style>

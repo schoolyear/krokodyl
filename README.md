@@ -8,6 +8,33 @@ This is a Wails application called "krokodyl" that provides a desktop GUI for pe
 - **Frontend**: Svelte with TypeScript and Vite
 - **File Transfer**: Uses the croc library (github.com/schollz/croc/v10) for secure P2P file transfers
 
+## Installation
+
+Download the latest build for your platform from the [releases page](../../releases).
+
+### macOS
+
+The app is not notarized (there is no Apple Developer account behind this project), so macOS
+shows an "unidentified developer" warning the first time you open it:
+
+1. Download and unzip `krokodyl-macos-universal.zip`
+2. Move `krokodyl.app` to your Applications folder (optional)
+3. Right-click `krokodyl.app` → **Open** → **Open**
+
+That's only needed once; afterwards it opens like any other app.
+
+### Windows / Linux
+
+Download the binary and run it. On Linux, make it executable first: `chmod +x krokodyl-linux`.
+
+### Logs
+
+If something goes wrong, the app writes a log you can attach to a bug report:
+
+- macOS: `~/Library/Caches/krokodyl/krokodyl.log`
+- Windows: `%LOCALAPPDATA%\krokodyl\krokodyl.log`
+- Linux: `~/.cache/krokodyl/krokodyl.log`
+
 ## Architecture
 
 The application follows a typical Wails structure:

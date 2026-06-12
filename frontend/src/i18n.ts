@@ -12,7 +12,7 @@ register('zh', () => import('./locales/zh.json'));
 
 // Create and export an async function to initialize i18n
 export async function setupi18n() {
-    const sysLocale = getLocaleFromNavigator()?.split('-')[0];
+    const sysLocale = getLocaleFromNavigator()?.split('-')[0] ?? 'en';
 
     // The init function returns a promise that resolves when the initial locale is loaded
     await init({
