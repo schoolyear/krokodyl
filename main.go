@@ -19,6 +19,11 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// buildStamp is set at build time via -ldflags "-X main.buildStamp=...". It
+// lets two machines confirm at a glance they run the same build — recovery
+// and other paired features only work when both sides match.
+var buildStamp = "dev"
+
 func main() {
 	closeLog := setupFileLogging()
 	defer closeLog()
@@ -116,7 +121,7 @@ func setupFileLogging() func() {
 	// (GUI-subsystem binaries launched without a console have an invalid
 	// stderr handle, and io.MultiWriter stops at the first failing writer).
 	logrus.SetOutput(io.MultiWriter(logFile, bestEffortWriter{os.Stderr}))
-	logrus.Infof("krokodyl starting, logging to %s", logFile.Name())
+	logrus.Infof("krokodyl starting (build %s), logging to %s", buildStamp, logFile.Name())
 	return func() { logFile.Close() }
 }
 

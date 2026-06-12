@@ -51,7 +51,8 @@
     "sending": "发送中",
     "receiving": "接收中",
     "preparing": "准备中",
-    "cancelled": "已取消"
+    "cancelled": "已取消",
+    "reconnecting": "正在重新连接…"
   },
   "toasts": {
     "transfer_completed": "传输完成！🎉",

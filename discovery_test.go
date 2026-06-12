@@ -26,7 +26,7 @@ func TestDecodeIdentity(t *testing.T) {
 		{"short fingerprint", `{"id":"abc","name":"laptop","port":4242,"fingerprint":"abcd"}`, true},
 		{"empty payload", ``, true},
 		{"garbage", `not json`, true},
-		{"oversized", `{"id":"a","port":1,"fingerprint":"` + testFingerprint + `","name":"` + strings.Repeat("x", 600) + `"}`, true},
+		{"oversized", `{"id":"a","port":1,"fingerprint":"` + testFingerprint + `","name":"` + strings.Repeat("x", 1100) + `"}`, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -50,13 +50,27 @@ func TestDecodeIdentityClampsLongName(t *testing.T) {
 }
 
 func TestIdentityRoundTrip(t *testing.T) {
-	in := discoveryIdentity{ID: "uuid-1", Name: "dev-machine", Port: 4242, Fingerprint: testFingerprint}
+	in := discoveryIdentity{ID: "uuid-1", Name: "dev-machine", Port: 4242, Fingerprint: testFingerprint, Addrs: []string{"192.168.1.5", "10.0.0.2"}}
 	out, err := decodeIdentity(encodeIdentity(in))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out != in {
+	if out.ID != in.ID || out.Name != in.Name || out.Port != in.Port || out.Fingerprint != in.Fingerprint {
 		t.Errorf("round trip mismatch: %+v != %+v", out, in)
+	}
+	if len(out.Addrs) != 2 || out.Addrs[0] != "192.168.1.5" || out.Addrs[1] != "10.0.0.2" {
+		t.Errorf("addrs lost in round trip: %v", out.Addrs)
+	}
+}
+
+func TestDecodeIdentityRejectsTooManyAddrs(t *testing.T) {
+	addrs := make([]string, maxAdvertisedAddrs+1)
+	for i := range addrs {
+		addrs[i] = "10.0.0.1"
+	}
+	in := discoveryIdentity{ID: "x", Name: "n", Port: 1, Fingerprint: testFingerprint, Addrs: addrs}
+	if _, err := decodeIdentity(encodeIdentity(in)); err == nil {
+		t.Error("too many advertised addresses must be rejected")
 	}
 }
 

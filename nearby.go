@@ -264,16 +264,40 @@ func (s *nearbyServer) close() {
 	}
 }
 
-// sendNearbyOffer dials a peer's control channel, presents the offer, and on
-// acceptance hands over the transfer code. The connection is accepted only
-// if the peer presents the certificate whose fingerprint it announced via
-// discovery (pinning — see the file header).
-func sendNearbyOffer(addr string, port int, expectedFingerprint string, req offerRequest, code string) (offerAnswer, error) {
+// perCandidateDialTimeout bounds each address attempt so trying several
+// candidates (a multi-homed peer advertises all its IPs) stays quick.
+const perCandidateDialTimeout = 4 * time.Second
+
+// sendNearbyOffer tries each candidate address until one connects, then
+// presents the offer over that connection. A multi-homed peer (Hyper-V / WSL
+// / Docker / VPN) advertises several addresses; only some are routable from
+// here, so dialing just one would fail spuriously. Once any address connects,
+// its outcome (accept/decline/busy) is returned — we do not keep trying.
+func sendNearbyOffer(candidates []string, port int, expectedFingerprint string, req offerRequest, code string) (offerAnswer, error) {
 	if expectedFingerprint == "" {
 		return offerAnswer{}, fmt.Errorf("device announced no certificate fingerprint")
 	}
+	if len(candidates) == 0 {
+		return offerAnswer{}, fmt.Errorf("device advertised no reachable address")
+	}
 
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	var lastErr error
+	for _, addr := range candidates {
+		answer, connected, err := offerToAddress(addr, port, expectedFingerprint, req, code)
+		if connected {
+			return answer, err
+		}
+		logrus.WithError(err).Debugf("nearby offer could not reach %s", addr)
+		lastErr = err
+	}
+	return offerAnswer{}, fmt.Errorf("could not reach device on any address (tried %v): %w", candidates, lastErr)
+}
+
+// offerToAddress attempts a single address. connected reports whether the TLS
+// connection was established; when true the caller stops (the peer was
+// reached) and uses answer/err as the final result.
+func offerToAddress(addr string, port int, expectedFingerprint string, req offerRequest, code string) (answer offerAnswer, connected bool, err error) {
+	dialer := &net.Dialer{Timeout: perCandidateDialTimeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", net.JoinHostPort(addr, fmt.Sprint(port)), &tls.Config{
 		// Self-signed ephemeral certs have no CA chain or hostname to
 		// check; identity comes from pinning the certificate announced in
@@ -291,30 +315,32 @@ func sendNearbyOffer(addr string, port int, expectedFingerprint string, req offe
 		},
 	})
 	if err != nil {
-		return offerAnswer{}, fmt.Errorf("could not reach device: %w", err)
+		// Could not establish the connection on this address — caller tries
+		// the next candidate.
+		return offerAnswer{}, false, err
 	}
 	defer conn.Close()
+	logrus.Debugf("nearby offer connected via %s", addr)
 	_ = conn.SetDeadline(time.Now().Add(offerDialTimeout))
 
 	enc := json.NewEncoder(conn)
 	dec := json.NewDecoder(io.LimitReader(conn, maxOfferWireBytes))
 
 	if err := enc.Encode(req); err != nil {
-		return offerAnswer{}, fmt.Errorf("could not send offer: %w", err)
+		return offerAnswer{}, true, fmt.Errorf("could not send offer: %w", err)
 	}
 
-	var answer offerAnswer
 	if err := dec.Decode(&answer); err != nil {
-		return offerAnswer{}, fmt.Errorf("no answer from device: %w", err)
+		return offerAnswer{}, true, fmt.Errorf("no answer from device: %w", err)
 	}
 	if !answer.Accepted {
-		return answer, nil
+		return answer, true, nil
 	}
 
 	if err := enc.Encode(codeMessage{Code: code}); err != nil {
-		return offerAnswer{}, fmt.Errorf("could not hand over transfer code: %w", err)
+		return offerAnswer{}, true, fmt.Errorf("could not hand over transfer code: %w", err)
 	}
-	return answer, nil
+	return answer, true, nil
 }
 
 func ephemeralCertificate() (tls.Certificate, error) {

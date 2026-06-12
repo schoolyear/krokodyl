@@ -51,7 +51,8 @@
     "sending": "verzenden",
     "receiving": "ontvangen",
     "preparing": "voorbereiden",
-    "cancelled": "geannuleerd"
+    "cancelled": "geannuleerd",
+    "reconnecting": "Opnieuw verbinden…"
   },
   "toasts": {
     "transfer_completed": "Overdracht voltooid! 🎉",

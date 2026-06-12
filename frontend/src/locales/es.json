@@ -51,7 +51,8 @@
     "sending": "enviando",
     "receiving": "recibiendo",
     "preparing": "preparando",
-    "cancelled": "cancelado"
+    "cancelled": "cancelado",
+    "reconnecting": "Reconectando…"
   },
   "toasts": {
     "transfer_completed": "¡Transferencia completada! 🎉",

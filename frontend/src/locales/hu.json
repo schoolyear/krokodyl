@@ -51,7 +51,8 @@
     "sending": "küldés",
     "receiving": "fogadás",
     "preparing": "előkészítés",
-    "cancelled": "megszakítva"
+    "cancelled": "megszakítva",
+    "reconnecting": "Újrakapcsolódás…"
   },
   "toasts": {
     "transfer_completed": "Átvitel befejezve! 🎉",

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -112,6 +113,26 @@ func TestMoveStagedFileRejectsUnsafePaths(t *testing.T) {
 				t.Errorf("unsafe path %q was not rejected", rel)
 			}
 		})
+	}
+}
+
+func TestStagingDirForCodeDeterministicAndScoped(t *testing.T) {
+	dest := `D:\Downloads`
+	a := stagingDirForCode(dest, "1671-salt-sphere-monaco")
+	b := stagingDirForCode(dest, "1671-salt-sphere-monaco")
+	c := stagingDirForCode(dest, "9999-other-code-word")
+
+	if a != b {
+		t.Errorf("same code must yield the same staging dir: %q != %q", a, b)
+	}
+	if a == c {
+		t.Error("different codes must yield different staging dirs")
+	}
+	if filepath.Dir(a) != filepath.Clean(dest) {
+		t.Errorf("staging dir must live under the destination, got %q", a)
+	}
+	if strings.Contains(filepath.Base(a), "salt-sphere") {
+		t.Error("staging dir name must not leak the code")
 	}
 }
 

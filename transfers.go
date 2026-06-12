@@ -22,6 +22,11 @@ type FileTransfer struct {
 	// PeerMachineID is the stable id of the device a peer send went to, so a
 	// repeat can reach the same machine even after it restarts and renames.
 	PeerMachineID string `json:"peerMachineId,omitempty"`
+	// ResumeCode is the transfer code kept for resuming a dropped transfer
+	// (sender reuses it; receiver's preserved partial is keyed by it). Not
+	// shown in the UI — distinct from the display Code. A failed transfer
+	// with a ResumeCode is resumable.
+	ResumeCode string `json:"resumeCode,omitempty"`
 }
 
 type FileTransferStatus string
@@ -31,6 +36,8 @@ const (
 	FileTransferStatusWaiting   FileTransferStatus = "waiting"
 	FileTransferStatusSending   FileTransferStatus = "sending"
 	FileTransferStatusReceiving FileTransferStatus = "receiving"
+	// Reconnecting after a drop while auto-recovery re-attempts the transfer.
+	FileTransferStatusReconnecting FileTransferStatus = "reconnecting"
 
 	FileTransferStatusError     FileTransferStatus = "error"
 	FileTransferStatusCancelled FileTransferStatus = "cancelled"

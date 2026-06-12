@@ -10,6 +10,10 @@ export function ClearHistory() {
   return window['go']['main']['App']['ClearHistory']();
 }
 
+export function GetBuildStamp() {
+  return window['go']['main']['App']['GetBuildStamp']();
+}
+
 export function GetDefaultDownloadPath() {
   return window['go']['main']['App']['GetDefaultDownloadPath']();
 }

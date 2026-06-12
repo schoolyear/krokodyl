@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -59,6 +59,7 @@
   let nearbyVisible = $state(true);
   let lastPeerName = $state('');
   let deviceName = $state('');
+  let buildStamp = $state('');
   let showClearConfirm = $state(false);
   // Per-row note shown when a "send again" can't proceed (e.g. device gone),
   // so the feedback sits right where the user clicked, not just in a toast.
@@ -191,6 +192,10 @@
       deviceName = name;
     }).catch(() => {});
 
+    GetBuildStamp().then((stamp: string) => {
+      buildStamp = stamp;
+    }).catch(() => {});
+
     return unsubscribe;
   });
 
@@ -285,7 +290,7 @@
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
-  const ACTIVE_STATUSES = ['preparing', 'waiting', 'sending', 'receiving'];
+  const ACTIVE_STATUSES = ['preparing', 'waiting', 'sending', 'receiving', 'reconnecting'];
 
   function getStatusInfo(status: string): { color: string; icon: string } {
     switch (status) {
@@ -295,6 +300,7 @@
       case 'waiting': return { color: 'var(--color-yellow)', icon: '⌛' };
       case 'sending':
       case 'receiving': return { color: 'var(--color-primary)', icon: '⏳' };
+      case 'reconnecting': return { color: 'var(--color-yellow)', icon: '🔄' };
       case 'preparing': return { color: 'var(--color-yellow)', icon: '⌛' };
       default: return { color: 'var(--color-text-dim)', icon: '❓' };
     }
@@ -558,6 +564,10 @@
         </div>
       {/if}
     </section>
+
+    {#if buildStamp}
+      <p class="build-stamp">build {buildStamp}</p>
+    {/if}
     </main>
   </div>
 {:else}
@@ -1388,6 +1398,15 @@
     justify-content: flex-end;
     gap: 0.75rem;
     margin-top: 1.25rem;
+  }
+
+  .build-stamp {
+    text-align: center;
+    font-size: 0.7rem;
+    color: var(--color-text-dim);
+    opacity: 0.6;
+    font-family: var(--font-family-mono);
+    margin: 0.25rem 0 0.5rem;
   }
 
   /* --- Loading --- */

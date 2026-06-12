@@ -14,6 +14,7 @@ export namespace main {
 	    paths?: string[];
 	    resendable?: boolean;
 	    peerMachineId?: string;
+	    resumeCode?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new FileTransfer(source);
@@ -34,12 +35,14 @@ export namespace main {
 	        this.paths = source["paths"];
 	        this.resendable = source["resendable"];
 	        this.peerMachineId = source["peerMachineId"];
+	        this.resumeCode = source["resumeCode"];
 	    }
 	}
 	export class NearbyPeer {
 	    id: string;
 	    name: string;
 	    addr: string;
+	    addrs?: string[];
 	    port: number;
 	    machineId: string;
 	
@@ -52,6 +55,7 @@ export namespace main {
 	        this.id = source["id"];
 	        this.name = source["name"];
 	        this.addr = source["addr"];
+	        this.addrs = source["addrs"];
 	        this.port = source["port"];
 	        this.machineId = source["machineId"];
 	    }

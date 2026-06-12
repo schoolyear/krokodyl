@@ -37,18 +37,20 @@ const (
 	// No self-echo for this long after start → assume blocked.
 	healthTimeout = 5 * time.Second
 
-	maxPayloadBytes = 512
+	maxPayloadBytes = 1024
 	maxPeerNameLen  = 64
 	maxMachineIDLen = 64
+	maxAddrLen      = 45 // longest possible IPv6 textual form
 )
 
 type NearbyPeer struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Addr        string `json:"addr"`
-	Port        int    `json:"port"`
-	MachineID   string `json:"machineId"` // stable per-install id; survives restarts/renames
-	Fingerprint string `json:"-"`         // control-channel cert pin; backend-only
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Addr        string   `json:"addr"`            // address the announcement arrived from
+	Addrs       []string `json:"addrs,omitempty"` // all reachable addresses the peer advertised
+	Port        int      `json:"port"`
+	MachineID   string   `json:"machineId"` // stable per-install id; survives restarts/renames
+	Fingerprint string   `json:"-"`         // control-channel cert pin; backend-only
 }
 
 type DiscoveryState struct {
@@ -56,11 +58,12 @@ type DiscoveryState struct {
 }
 
 type discoveryIdentity struct {
-	ID          string `json:"id"`
-	Name        string `json:"name,omitempty"`
-	Port        int    `json:"port,omitempty"`        // control-channel TCP port
-	Fingerprint string `json:"fingerprint,omitempty"` // control-channel cert SHA-256 (hex)
-	MachineID   string `json:"machineId,omitempty"`   // stable per-install id
+	ID          string   `json:"id"`
+	Name        string   `json:"name,omitempty"`
+	Port        int      `json:"port,omitempty"`        // control-channel TCP port
+	Fingerprint string   `json:"fingerprint,omitempty"` // control-channel cert SHA-256 (hex)
+	MachineID   string   `json:"machineId,omitempty"`   // stable per-install id
+	Addrs       []string `json:"addrs,omitempty"`       // reachable addresses to dial
 	// Gen rises each time this instance becomes visible again. A goodbye
 	// suppresses only same-or-older-generation announcements (in-flight
 	// stragglers); a higher generation means an intentional unhide and is
@@ -108,6 +111,14 @@ func decodeIdentity(payload []byte) (discoveryIdentity, error) {
 	// repeat-matchable) but bounded when present.
 	if len(id.MachineID) > maxMachineIDLen {
 		return id, fmt.Errorf("discovery payload has oversized machine id")
+	}
+	if len(id.Addrs) > maxAdvertisedAddrs {
+		return id, fmt.Errorf("discovery payload advertises too many addresses")
+	}
+	for _, a := range id.Addrs {
+		if len(a) > maxAddrLen {
+			return id, fmt.Errorf("discovery payload has an oversized address")
+		}
 	}
 	if len(id.Name) > maxPeerNameLen {
 		id.Name = id.Name[:maxPeerNameLen]
@@ -193,6 +204,7 @@ func (r *peerRegistry) observe(id discoveryIdentity, addr string, now time.Time)
 		existing.lastSeen = now
 		existing.Name = id.Name
 		existing.Addr = addr
+		existing.Addrs = id.Addrs
 		existing.Port = id.Port
 		existing.MachineID = id.MachineID
 		existing.Fingerprint = id.Fingerprint
@@ -202,6 +214,7 @@ func (r *peerRegistry) observe(id discoveryIdentity, addr string, now time.Time)
 				ID:          id.ID,
 				Name:        id.Name,
 				Addr:        addr,
+				Addrs:       id.Addrs,
 				Port:        id.Port,
 				MachineID:   id.MachineID,
 				Fingerprint: id.Fingerprint,

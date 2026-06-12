@@ -6,6 +6,8 @@ export function CancelTransfer(arg1:string):Promise<void>;
 
 export function ClearHistory():Promise<void>;
 
+export function GetBuildStamp():Promise<string>;
+
 export function GetDefaultDownloadPath():Promise<string>;
 
 export function GetDeviceName():Promise<string>;

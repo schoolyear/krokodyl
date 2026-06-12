@@ -58,10 +58,6 @@ const (
 	NearbyEventOffer       string = "nearby:offer"
 )
 
-// senderWaitTimeout bounds how long a sender waits for a receiver to show up
-// before the transfer fails instead of hanging forever.
-const senderWaitTimeout = time.Hour
-
 // startup is called when the app starts. The context is saved
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
@@ -95,6 +91,11 @@ func (a *App) startup(ctx context.Context) {
 			logrus.WithError(err).Error("failed to send dropped files")
 		}
 	})
+
+	// Sweep partial dirs left by transfers that were never resumed.
+	if sp, err := settingsPath(); err == nil {
+		sweepPartials(sp, time.Now().Unix())
+	}
 
 	a.startNearby()
 }
@@ -142,6 +143,10 @@ func (a *App) startNearby() {
 		MachineID:   a.machineID,
 		Fingerprint: fingerprint,
 		Gen:         a.nearbyGen,
+		// Advertise every reachable address so a peer on the real LAN can
+		// connect even when a virtual adapter (Hyper-V/WSL/Docker) would
+		// otherwise be the only one it learned about.
+		Addrs: localUnicastIPs(),
 	}
 	a.nearby = newPeerRegistry(identity.ID, func(peers []NearbyPeer) {
 		runtime.EventsEmit(a.ctx, NearbyEventUpdated, peers)
@@ -232,6 +237,13 @@ func (a *App) acceptPeerTransfer(senderName, code string) {
 // SendToPeer offers files to a nearby device and, once accepted, sends them
 // with an internally negotiated code — never shown to either user.
 func (a *App) SendToPeer(peerID string, paths []string) (string, error) {
+	return a.sendToPeer(peerID, paths, "")
+}
+
+// sendToPeer offers files to a nearby device. An empty code means generate a
+// fresh one; a supplied code resumes a dropped peer transfer (the receiver
+// continues from the partial it kept under that code).
+func (a *App) sendToPeer(peerID string, paths []string, code string) (string, error) {
 	if a.nearby == nil {
 		return "", fmt.Errorf("nearby sending is not available")
 	}
@@ -273,13 +285,15 @@ func (a *App) SendToPeer(peerID string, paths []string) (string, error) {
 	}
 	a.tm.add(transfer)
 
-	go a.performPeerSend(transfer.ID, peer, paths, names, totalSize)
+	go a.performPeerSend(transfer.ID, peer, paths, names, totalSize, code)
 
 	return transfer.ID, nil
 }
 
-func (a *App) performPeerSend(id string, peer NearbyPeer, paths, names []string, totalSize int64) {
-	code := utils.GetRandomName()
+func (a *App) performPeerSend(id string, peer NearbyPeer, paths, names []string, totalSize int64, code string) {
+	if code == "" {
+		code = utils.GetRandomName()
+	}
 
 	// Open our croc room first, then offer: the receiver starts receiving
 	// the moment the user accepts, and joining a room that doesn't exist
@@ -287,7 +301,9 @@ func (a *App) performPeerSend(id string, peer NearbyPeer, paths, names []string,
 	// the human decides; decline/timeout kills it below.
 	go a.performSendWithCode(id, paths, code)
 
-	answer, err := sendNearbyOffer(peer.Addr, peer.Port, peer.Fingerprint, offerRequest{
+	candidates := orderedCandidates(peer.Addrs, peer.Addr)
+	logrus.Infof("offering to %s via candidates %v", peer.Name, candidates)
+	answer, err := sendNearbyOffer(candidates, peer.Port, peer.Fingerprint, offerRequest{
 		SenderName: a.deviceName,
 		Files:      names,
 		Size:       totalSize,
@@ -409,6 +425,13 @@ func (a *App) SendFile(filePath string) (string, error) {
 }
 
 func (a *App) SendFiles(paths []string) (string, error) {
+	return a.sendFilesWithCode(paths, "")
+}
+
+// sendFilesWithCode starts a code-flow send. An empty code means generate a
+// fresh one; a supplied code is reused to resume a dropped transfer (the
+// receiver re-enters the same code and continues from its preserved partial).
+func (a *App) sendFilesWithCode(paths []string, code string) (string, error) {
 	if len(paths) == 0 {
 		return "", fmt.Errorf("no files selected")
 	}
@@ -442,7 +465,7 @@ func (a *App) SendFiles(paths []string) (string, error) {
 	}
 	a.tm.add(transfer)
 
-	go a.performSend(transfer.ID, paths)
+	go a.performSend(transfer.ID, paths, code)
 
 	return transfer.ID, nil
 }
@@ -480,10 +503,21 @@ func (a *App) ResendTransfer(id string) ResendOutcome {
 		return ResendOutcome{Message: "Can't repeat — these files no longer exist: " + strings.Join(missing, ", ")}
 	}
 
+	// A dropped transfer (failed, with its code kept) can resume: reuse the
+	// same code so the receiver continues from the partial it preserved.
+	resume := t.Status == FileTransferStatusError && t.ResumeCode != ""
+	code := ""
+	if resume {
+		code = t.ResumeCode
+	}
+
 	// Not a peer send — plain code resend (waiting for a code is the point).
 	if t.Peer == "" {
-		if _, err := a.SendFiles(t.Paths); err != nil {
+		if _, err := a.sendFilesWithCode(t.Paths, code); err != nil {
 			return ResendOutcome{Message: err.Error()}
+		}
+		if resume {
+			return ResendOutcome{Started: true, Message: "Resuming — enter the same code on the other device to continue."}
 		}
 		return ResendOutcome{Started: true, Message: "Sending again with a new code."}
 	}
@@ -492,8 +526,11 @@ func (a *App) ResendTransfer(id string) ResendOutcome {
 	if !ok {
 		return ResendOutcome{Message: t.Peer + " isn't nearby anymore — open krokodyl there to send again."}
 	}
-	if _, err := a.SendToPeer(peerID, t.Paths); err != nil {
+	if _, err := a.sendToPeer(peerID, t.Paths, code); err != nil {
 		return ResendOutcome{Message: err.Error()}
+	}
+	if resume {
+		return ResendOutcome{Started: true, Message: "Resuming transfer to " + t.Peer + "."}
 	}
 	return ResendOutcome{Started: true, Message: "Sending again to " + t.Peer + "."}
 }
@@ -527,8 +564,10 @@ func (a *App) findPeerByName(name string) (string, bool) {
 	return "", false
 }
 
-func (a *App) performSend(id string, paths []string) {
-	code := utils.GetRandomName()
+func (a *App) performSend(id string, paths []string, code string) {
+	if code == "" {
+		code = utils.GetRandomName()
+	}
 	// Code-flow sends surface the code so the user can share it; peer sends
 	// keep it internal (performSendWithCode is called directly there).
 	a.tm.update(id, func(t *FileTransfer) {
@@ -539,34 +578,17 @@ func (a *App) performSend(id string, paths []string) {
 }
 
 func (a *App) performSendWithCode(id string, paths []string, code string) {
-	timeout := time.AfterFunc(senderWaitTimeout, func() {
-		if t, ok := a.tm.get(id); ok && t.Status == FileTransferStatusWaiting {
-			a.failTransfer(id, "no receiver connected, transfer timed out")
-			a.killWorker(id)
-		}
-	})
-	defer timeout.Stop()
+	// Keep the code so a dropped send can be resumed with the same one.
+	a.tm.update(id, func(t *FileTransfer) { t.ResumeCode = code })
+
+	cancelCh := a.registerCancel(id)
+	defer a.unregisterCancel(id)
 
 	job := workerJob{Mode: "send", Code: code, Paths: paths}
-	workerErrMsg, err := a.runWorkerJob(id, job, func(ev workerEvent) {
-		switch ev.Type {
-		case "files":
-			a.tm.update(id, func(t *FileTransfer) {
-				t.Files = ev.Files
-				t.Size = ev.Size
-			})
-		case "progress":
-			a.tm.update(id, func(t *FileTransfer) {
-				t.Progress = ev.Progress
-				t.Speed = ev.Speed
-				if ev.Sent > 0 {
-					t.Status = FileTransferStatusSending
-				}
-			})
-		}
+	ok := a.runRecoverableAttempts(id, cancelCh, func(n, basePct int) (int, string, error) {
+		return a.runSendAttempt(id, job, connectGrace(n), basePct)
 	})
-	if err != nil {
-		a.failTransfer(id, workerErrMsg)
+	if !ok {
 		return
 	}
 
@@ -575,6 +597,51 @@ func (a *App) performSendWithCode(id string, paths []string, code string) {
 		t.Progress = 100
 		t.Speed = 0
 	})
+}
+
+// runSendAttempt runs one send worker. Displayed progress is offset by
+// basePct (the best reached in earlier attempts) so a resume continues the
+// bar instead of restarting at 0. Returns the peak overall % this attempt
+// reached so the recovery loop can judge whether it made headway.
+func (a *App) runSendAttempt(id string, job workerJob, grace time.Duration, basePct int) (int, string, error) {
+	peak := basePct
+	tracker := &stallTracker{}
+	stopWatchdog := a.startStallWatchdog(id, tracker, grace)
+	defer stopWatchdog()
+
+	workerErrMsg, err := a.runWorkerJob(id, job, func(ev workerEvent) {
+		switch ev.Type {
+		case "files":
+			a.tm.update(id, func(t *FileTransfer) {
+				t.Files = ev.Files
+				t.Size = ev.Size
+			})
+		case "progress":
+			display := overallProgress(basePct, ev.Progress)
+			if display > peak {
+				peak = display
+			}
+			tracker.observe(ev.Sent, ev.Progress, ev.Sent > 0, time.Now())
+			a.tm.update(id, func(t *FileTransfer) {
+				t.Progress = display
+				t.Speed = ev.Speed
+				if ev.Sent > 0 {
+					t.Status = FileTransferStatusSending
+				}
+			})
+		}
+	})
+	return peak, workerErrMsg, err
+}
+
+// overallProgress maps a worker's per-session percent into the band above the
+// progress already achieved, capped at 99 (only completion shows 100).
+func overallProgress(basePct, sessionPct int) int {
+	display := basePct + sessionPct
+	if display > 99 {
+		return 99
+	}
+	return display
 }
 
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
@@ -612,41 +679,85 @@ func (a *App) performReceive(id, code, destinationPath string) {
 	cancelCh := a.registerCancel(id)
 	defer a.unregisterCancel(id)
 
-	// Staging inside the destination keeps it on the same volume, so the
-	// final per-file rename is instant and never crosses devices.
-	stagingDir := filepath.Join(destinationPath, ".krokodyl-partial-"+id)
+	// Staging inside the destination keeps it on the same volume (instant
+	// final rename) AND is keyed by the code, so a retry with the same code
+	// reuses the partial bytes and croc resumes the missing chunks.
+	stagingDir := stagingDirForCode(destinationPath, code)
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		a.failTransfer(id, fmt.Sprintf("cannot write to destination: %s", err))
 		return
 	}
-	defer os.RemoveAll(stagingDir)
 
 	a.tm.update(id, func(t *FileTransfer) {
 		t.Status = FileTransferStatusReceiving
+		t.ResumeCode = code
 	})
+	if sp, err := settingsPath(); err == nil {
+		recordPartial(sp, stagingDir, time.Now().Unix())
+	}
 
+	// Each attempt re-runs into the same code-derived staging dir, so a
+	// reconnect resumes from the partial instead of restarting.
 	job := workerJob{Mode: "receive", Code: code, StagingDir: stagingDir}
-	workerErrMsg, err := a.runWorkerJob(id, job, func(ev workerEvent) {
-		if ev.Type == "progress" {
-			a.tm.update(id, func(t *FileTransfer) {
-				t.Progress = ev.Progress
-				t.Speed = ev.Speed
-				t.Size = ev.Size
-			})
-		}
+	ok := a.runRecoverableAttempts(id, cancelCh, func(n, basePct int) (int, string, error) {
+		return a.runReceiveAttempt(id, job, connectGrace(n), basePct)
 	})
-	if err != nil {
-		a.failTransfer(id, workerErrMsg)
+	if !ok {
+		// Cancelled → nothing to resume, drop the partial. Gave up → keep it
+		// so a manual Send again can still try later.
+		if t, ok := a.tm.get(id); ok && t.Status == FileTransferStatusCancelled {
+			a.cleanupStaging(stagingDir)
+		}
 		return
 	}
 
 	a.finalizeReceive(id, stagingDir, destinationPath, cancelCh)
 }
 
+// runReceiveAttempt runs one receive worker into the (preserved) staging dir.
+// Displayed progress is offset by basePct so a resume continues the bar.
+func (a *App) runReceiveAttempt(id string, job workerJob, grace time.Duration, basePct int) (int, string, error) {
+	peak := basePct
+	tracker := &stallTracker{}
+	stopWatchdog := a.startStallWatchdog(id, tracker, grace)
+	defer stopWatchdog()
+
+	workerErrMsg, err := a.runWorkerJob(id, job, func(ev workerEvent) {
+		if ev.Type == "progress" {
+			display := overallProgress(basePct, ev.Progress)
+			if display > peak {
+				peak = display
+			}
+			tracker.observe(ev.Sent, ev.Progress, true, time.Now())
+			a.tm.update(id, func(t *FileTransfer) {
+				t.Progress = display
+				t.Speed = ev.Speed
+				t.Size = ev.Size
+				// Flip back from "reconnecting" once data flows again.
+				t.Status = FileTransferStatusReceiving
+			})
+		}
+	})
+	return peak, workerErrMsg, err
+}
+
+// cleanupStaging removes a staging dir and stops tracking it as a resumable
+// partial. Used when a transfer completes or is cancelled (not when it drops).
+func (a *App) cleanupStaging(stagingDir string) {
+	os.RemoveAll(stagingDir)
+	if sp, err := settingsPath(); err == nil {
+		forgetPartial(sp, stagingDir)
+	}
+}
+
 // finalizeReceive moves downloaded files from staging into the destination,
 // prompting for overwrites, with relative paths preserved so nested folder
 // structures arrive intact.
 func (a *App) finalizeReceive(id, stagingDir, destinationPath string, cancelCh chan struct{}) {
+	// Reached only after a fully successful croc receive — the partial is
+	// complete, so always clean it up (files are moved out below).
+	defer a.cleanupStaging(stagingDir)
+
 	staged, err := listStagedFiles(stagingDir)
 	if err != nil {
 		a.failTransfer(id, err.Error())
@@ -662,8 +773,8 @@ func (a *App) finalizeReceive(id, stagingDir, destinationPath string, cancelCh c
 	for _, sf := range staged {
 		select {
 		case <-cancelCh:
-			// Cancelled mid-finalize: status is already cancelled, staging
-			// cleanup happens in performReceive's defer.
+			// Cancelled mid-finalize: status is already cancelled; the
+			// deferred cleanup removes the staging dir.
 			return
 		default:
 		}
@@ -770,6 +881,98 @@ func (a *App) killWorker(id string) {
 	if ok && cmd.Process != nil {
 		if err := cmd.Process.Kill(); err != nil {
 			logrus.WithError(err).Warnf("failed to kill worker for transfer %s", id)
+		}
+	}
+}
+
+// startStallWatchdog watches a transfer's byte movement and fails it if it
+// freezes (e.g. Wi-Fi drops mid-transfer) instead of leaving the row stuck
+// until croc's own socket timeout. Returns a stop function; safe to call once
+// the transfer ends. failTransfer here wins because terminal state is final,
+// so the worker's own later error becomes a no-op.
+// startStallWatchdog kills a frozen worker so the attempt ends promptly
+// instead of hanging on a dead socket. It does NOT mark the transfer failed —
+// the recovery loop owns that decision (it may reconnect and resume). The
+// killed worker surfaces as an attempt error the loop then handles.
+//
+// connectGrace bounds how long the attempt may sit with no movement at all
+// (waiting to connect/reconnect). Once bytes start flowing the stall timeout
+// takes over.
+func (a *App) startStallWatchdog(id string, tracker *stallTracker, connectGrace time.Duration) func() {
+	done := make(chan struct{})
+	var once sync.Once
+
+	go func() {
+		start := time.Now()
+		ticker := time.NewTicker(stallCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				now := time.Now()
+				stalled := false
+				if tracker.isArmed() {
+					stalled = tracker.stalled(now)
+				} else {
+					stalled = now.Sub(start) > connectGrace
+				}
+				if stalled {
+					logrus.Infof("transfer %s attempt ended (no movement) — recovery will decide", id)
+					a.killWorker(id)
+					return
+				}
+			}
+		}
+	}()
+
+	return func() { once.Do(func() { close(done) }) }
+}
+
+// sleepOrCancel waits d, returning false if the transfer is cancelled first.
+func (a *App) sleepOrCancel(cancelCh chan struct{}, d time.Duration) bool {
+	select {
+	case <-time.After(d):
+		return true
+	case <-cancelCh:
+		return false
+	}
+}
+
+// runRecoverableAttempts re-runs attempt() — one worker run — until it
+// succeeds, the user cancels, or the recovery budget is spent. Between failed
+// attempts that still make progress it shows "reconnecting" and backs off.
+// Returns true only on success.
+func (a *App) runRecoverableAttempts(id string, cancelCh chan struct{}, attempt func(n, basePct int) (peakPct int, errMsg string, err error)) bool {
+	budget := newRecoveryBudget()
+	for n := 0; ; n++ {
+		// Each attempt's worker reports progress only for the bytes it moves
+		// this session; on a resume that restarts at 0. Offsetting by the
+		// best progress so far makes the bar continue (85% -> 100%) instead
+		// of dropping back to 0.
+		peak, errMsg, err := attempt(n, budget.bestPct)
+		if err == nil {
+			return true
+		}
+
+		// User cancel is final — never auto-retry.
+		if t, ok := a.tm.get(id); ok && t.Status == FileTransferStatusCancelled {
+			return false
+		}
+
+		logrus.Infof("transfer %s attempt %d failed (peak %d%%): %s", id, n, peak, errMsg)
+		if budget.record(peak) {
+			a.failTransfer(id, "couldn't reconnect — the connection kept dropping")
+			return false
+		}
+
+		a.tm.update(id, func(t *FileTransfer) {
+			t.Status = FileTransferStatusReconnecting
+			t.Speed = 0
+		})
+		if !a.sleepOrCancel(cancelCh, recoveryBackoff(n)) {
+			return false // cancelled during backoff
 		}
 	}
 }
@@ -916,6 +1119,12 @@ func (a *App) GetDefaultDownloadPath() (string, error) {
 // GetDeviceName returns this instance's friendly readable name.
 func (a *App) GetDeviceName() string {
 	return a.deviceName
+}
+
+// GetBuildStamp returns the build identifier so two machines can confirm they
+// run the same build.
+func (a *App) GetBuildStamp() string {
+	return buildStamp
 }
 
 // ClearHistory empties the transfer list and the persisted history file.

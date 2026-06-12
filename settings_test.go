@@ -83,6 +83,69 @@ func TestEnsureMachineIDPreservesOtherSettings(t *testing.T) {
 	}
 }
 
+func TestExpiredPartials(t *testing.T) {
+	now := int64(1_000_000)
+	refs := []partialRef{
+		{Dir: "fresh", At: now - 10},
+		{Dir: "old", At: now - partialMaxAge - 10},
+		{Dir: "edge", At: now - partialMaxAge + 5}, // just inside
+	}
+	keep, expired := expiredPartials(refs, now, partialMaxAge)
+	if len(keep) != 2 || len(expired) != 1 {
+		t.Fatalf("expected 2 keep / 1 expired, got %d / %d", len(keep), len(expired))
+	}
+	if expired[0].Dir != "old" {
+		t.Errorf("wrong entry expired: %+v", expired)
+	}
+}
+
+func TestRecordAndForgetPartial(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+
+	recordPartial(path, `D:\dl\.krokodyl-partial-abc`, 1000)
+	recordPartial(path, `D:\dl\.krokodyl-partial-abc`, 2000) // dedupe
+	recordPartial(path, `D:\dl\.krokodyl-partial-def`, 1000)
+	if got := loadSettings(path).Partials; len(got) != 2 {
+		t.Fatalf("expected 2 tracked partials (deduped), got %d", len(got))
+	}
+
+	forgetPartial(path, `D:\dl\.krokodyl-partial-abc`)
+	got := loadSettings(path).Partials
+	if len(got) != 1 || got[0].Dir != `D:\dl\.krokodyl-partial-def` {
+		t.Errorf("forget left wrong state: %+v", got)
+	}
+}
+
+func TestSweepPartialsRemovesStaleDirs(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "settings.json")
+
+	stale := filepath.Join(base, ".krokodyl-partial-stale")
+	fresh := filepath.Join(base, ".krokodyl-partial-fresh")
+	if err := os.MkdirAll(stale, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(fresh, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	now := int64(2_000_000)
+	recordPartial(path, stale, now-partialMaxAge-100)
+	recordPartial(path, fresh, now-10)
+
+	sweepPartials(path, now)
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Error("stale partial dir should have been removed")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Error("fresh partial dir should remain")
+	}
+	if got := loadSettings(path).Partials; len(got) != 1 || got[0].Dir != fresh {
+		t.Errorf("sweep left wrong tracking: %+v", got)
+	}
+}
+
 func TestLoadSettingsMissingFileReturnsZero(t *testing.T) {
 	out := loadSettings(filepath.Join(t.TempDir(), "nope.json"))
 	if out.LastDestination != "" {

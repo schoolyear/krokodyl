@@ -34,7 +34,7 @@ func startTestServer(t *testing.T, accept bool) (srv *nearbyServer, port int, fi
 func TestNearbyOfferAcceptHandsOverCode(t *testing.T) {
 	_, port, fp, accepted := startTestServer(t, true)
 
-	answer, err := sendNearbyOffer("127.0.0.1", port, fp, offerRequest{
+	answer, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
 		SenderName: "dev-box",
 		Files:      []string{"build.zip"},
 		Size:       1234,
@@ -68,7 +68,7 @@ func TestNearbyOfferAcceptHandsOverCode(t *testing.T) {
 func TestNearbyOfferDecline(t *testing.T) {
 	_, port, fp, accepted := startTestServer(t, false)
 
-	answer, err := sendNearbyOffer("127.0.0.1", port, fp, offerRequest{
+	answer, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
 		SenderName: "dev-box",
 		Files:      []string{"a.txt"},
 		Size:       1,
@@ -88,7 +88,7 @@ func TestNearbyOfferWrongFingerprintRejected(t *testing.T) {
 	_, port, _, _ := startTestServer(t, true)
 
 	wrongFp := strings.Repeat("ab", 32)
-	_, err := sendNearbyOffer("127.0.0.1", port, wrongFp, offerRequest{
+	_, err := sendNearbyOffer([]string{"127.0.0.1"}, port, wrongFp, offerRequest{
 		SenderName: "dev-box",
 		Files:      []string{"a.txt"},
 		Size:       1,
@@ -99,8 +99,43 @@ func TestNearbyOfferWrongFingerprintRejected(t *testing.T) {
 }
 
 func TestNearbyOfferEmptyFingerprintRejected(t *testing.T) {
-	if _, err := sendNearbyOffer("127.0.0.1", 1, "", offerRequest{}, "x"); err == nil {
+	if _, err := sendNearbyOffer([]string{"127.0.0.1"}, 1, "", offerRequest{}, "x"); err == nil {
 		t.Fatal("empty fingerprint must be rejected before dialing")
+	}
+}
+
+func TestNearbyOfferTriesAllCandidates(t *testing.T) {
+	_, port, fp, accepted := startTestServer(t, true)
+
+	// First candidate is an unroutable test address; the offer must fall
+	// through to the reachable loopback and still connect.
+	answer, err := sendNearbyOffer([]string{"192.0.2.1", "127.0.0.1"}, port, fp, offerRequest{
+		SenderName: "dev-box",
+		Files:      []string{"build.zip"},
+		Size:       1,
+	}, "9999-test-code-word")
+	if err != nil {
+		t.Fatalf("should connect via the reachable candidate: %v", err)
+	}
+	if !answer.Accepted {
+		t.Fatal("offer should have been accepted via the second candidate")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, ok := accepted.Load("code"); ok {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("code never reached onAccept")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestNearbyOfferNoCandidates(t *testing.T) {
+	if _, err := sendNearbyOffer(nil, 1, "abc", offerRequest{}, "x"); err == nil {
+		t.Fatal("empty candidate list must error")
 	}
 }
 
@@ -145,7 +180,7 @@ func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		_, err := sendNearbyOffer("127.0.0.1", port, fp, offerRequest{
+		_, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
 			SenderName: "first", Files: []string{"a"}, Size: 1,
 		}, "code-one")
 		firstDone <- err
@@ -154,7 +189,7 @@ func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
 	// Give the first offer time to become pending.
 	time.Sleep(300 * time.Millisecond)
 
-	answer, err := sendNearbyOffer("127.0.0.1", port, fp, offerRequest{
+	answer, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
 		SenderName: "second", Files: []string{"b"}, Size: 1,
 	}, "code-two")
 	if err != nil {

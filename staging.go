@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -10,6 +12,17 @@ import (
 	"strings"
 	"time"
 )
+
+// stagingDirForCode derives a deterministic staging directory from the
+// transfer code, inside the destination (kept on the same volume so the final
+// rename never crosses devices). Deterministic-per-code is what makes resume
+// work: a retry with the same code lands on the same partial bytes, and croc
+// resumes the missing chunks. The code is hashed so the directory name never
+// leaks the shared secret.
+func stagingDirForCode(destinationPath, code string) string {
+	sum := sha256.Sum256([]byte(code))
+	return filepath.Join(destinationPath, ".krokodyl-partial-"+hex.EncodeToString(sum[:8]))
+}
 
 // stagedFile describes one received file inside a staging directory,
 // addressed by its path relative to the staging root so nested folder

@@ -19,6 +19,30 @@ type appSettings struct {
 	MachineID string `json:"machineId,omitempty"`
 	// Pointer so "never set" (default visible) is distinct from "off".
 	NearbyVisible *bool `json:"nearbyVisible,omitempty"`
+	// Partials tracks preserved partial-transfer directories so abandoned
+	// ones can be swept on a later run instead of accumulating on disk.
+	Partials []partialRef `json:"partials,omitempty"`
+}
+
+type partialRef struct {
+	Dir string `json:"dir"`
+	At  int64  `json:"at"` // unix seconds when preserved
+}
+
+// partialMaxAge bounds how long an abandoned partial is kept before sweep.
+const partialMaxAge = 24 * 60 * 60 // seconds
+
+// expiredPartials splits refs into those still within maxAge and those past
+// it, given the current unix time. Pure, so it can be tested directly.
+func expiredPartials(refs []partialRef, nowUnix, maxAge int64) (keep, expired []partialRef) {
+	for _, r := range refs {
+		if nowUnix-r.At > maxAge {
+			expired = append(expired, r)
+		} else {
+			keep = append(keep, r)
+		}
+	}
+	return keep, expired
 }
 
 func (s appSettings) nearbyVisible() bool {
@@ -62,6 +86,58 @@ func ensureMachineID(path string) string {
 		logrus.WithError(err).Warn("could not persist machine id")
 	}
 	return s.MachineID
+}
+
+// recordPartial remembers a preserved partial dir (best-effort).
+func recordPartial(path, dir string, nowUnix int64) {
+	s := loadSettings(path)
+	for _, r := range s.Partials {
+		if r.Dir == dir {
+			return // already tracked
+		}
+	}
+	s.Partials = append(s.Partials, partialRef{Dir: dir, At: nowUnix})
+	if err := saveSettings(path, s); err != nil {
+		logrus.WithError(err).Warn("could not record partial transfer")
+	}
+}
+
+// forgetPartial drops a partial dir from tracking (after it is resumed,
+// completed, or deleted), best-effort.
+func forgetPartial(path, dir string) {
+	s := loadSettings(path)
+	kept := s.Partials[:0]
+	for _, r := range s.Partials {
+		if r.Dir != dir {
+			kept = append(kept, r)
+		}
+	}
+	s.Partials = kept
+	if err := saveSettings(path, s); err != nil {
+		logrus.WithError(err).Warn("could not forget partial transfer")
+	}
+}
+
+// sweepPartials deletes abandoned partial dirs older than partialMaxAge and
+// prunes them from settings. Best-effort; called at startup.
+func sweepPartials(path string, nowUnix int64) {
+	s := loadSettings(path)
+	if len(s.Partials) == 0 {
+		return
+	}
+	keep, expired := expiredPartials(s.Partials, nowUnix, partialMaxAge)
+	if len(expired) == 0 {
+		return
+	}
+	for _, r := range expired {
+		if err := os.RemoveAll(r.Dir); err != nil {
+			logrus.WithError(err).Warnf("could not remove stale partial %s", r.Dir)
+		}
+	}
+	s.Partials = keep
+	if err := saveSettings(path, s); err != nil {
+		logrus.WithError(err).Warn("could not prune swept partials")
+	}
 }
 
 func saveSettings(path string, s appSettings) error {
