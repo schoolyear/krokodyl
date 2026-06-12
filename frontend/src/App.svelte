@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   // I18n imports
-  import { _ } from 'svelte-i18n';
+  import { _, locale } from 'svelte-i18n';
   import { setupi18n } from './i18n';
   import TitleBar from './components/TitleBar.svelte';
   import { theme } from './stores/theme';
@@ -96,6 +96,8 @@
   let verifyPrompt: VerifyPrompt | null = $state(null);
   // A peer resend awaiting the user's check of the target name + address.
   let resendConfirm: { id: string; name: string; addr: string } | null = $state(null);
+  // Marks the code input invalid after a failed receive attempt (3.3.1).
+  let receiveInvalid = $state(false);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -108,6 +110,12 @@
     await setupi18n();
     isReady = true;
   })();
+
+  // Keep the document language in sync with the chosen locale so screen
+  // readers switch TTS voice and pronunciation rules (WCAG 3.1.1).
+  $effect(() => {
+    if ($locale) document.documentElement.lang = $locale.split('-')[0];
+  });
 
   onMount(() => {
     theme.init();
@@ -259,9 +267,11 @@
 
   async function receiveFile() {
     if (isReceiving || !receiveCode.trim() || !destinationPath.trim()) {
+      receiveInvalid = !receiveCode.trim();
       showToast($_('toasts.missing_info'), 'error');
       return;
     }
+    receiveInvalid = false;
 
     try {
       showToast($_('toasts.download_started'), 'info');
@@ -549,17 +559,19 @@
             {:else if nearbyPeers.length === 0}
               <p class="nearby-state">{$_('nearby.empty')}</p>
             {:else}
-              <div class="peer-chips">
+              <ul class="peer-chips">
                 {#each sortedPeers as peer (peer.id)}
-                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={$_('a11y.send_to', { values: { name: peer.name } })} title={peer.addr}>
-                    <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
-                    <span class="peer-name">{peer.name}</span>
-                    {#if peer.name === lastPeerName}
-                      <span class="peer-recent">{$_('nearby.recent')}</span>
-                    {/if}
-                  </button>
+                  <li>
+                    <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={$_('a11y.send_to', { values: { name: peer.name } })} title={peer.addr}>
+                      <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
+                      <span class="peer-name">{peer.name}</span>
+                      {#if peer.name === lastPeerName}
+                        <span class="peer-recent">{$_('nearby.recent')}</span>
+                      {/if}
+                    </button>
+                  </li>
                 {/each}
-              </div>
+              </ul>
             {/if}
           </div>
 
@@ -570,10 +582,10 @@
             ondragleave={() => isDragOver = false}
             ondrop={() => isDragOver = false}
             role="region"
-            aria-label={$_('send.drop_hint')}
+            aria-labelledby="drop-hint-text"
           >
             <div class="drop-glyph" aria-hidden="true">📂</div>
-            <p class="drop-hint">{$_('send.drop_hint')}</p>
+            <p class="drop-hint" id="drop-hint-text">{$_('send.drop_hint')}</p>
             <p class="drop-or">{$_('send.drop_or')}</p>
             <button class="btn primary" onclick={browseAndSendFiles} disabled={isSending}>
               {#if isSending}
@@ -590,7 +602,7 @@
           <h2>{$_('receive.title')}</h2>
           <p class="panel-description">{$_('receive.description')}</p>
           <div class="input-group">
-            <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" spellcheck="false" autocomplete="off" />
+            <input class="code-input" type="text" bind:value={receiveCode} oninput={() => receiveInvalid = false} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" aria-invalid={receiveInvalid} spellcheck="false" autocomplete="off" />
             <span id="code-input-hint" class="sr-only">{$_('a11y.code_hint')}</span>
           </div>
           <div class="input-group destination-group">
@@ -624,10 +636,10 @@
           <p>{$_('history.empty_state')}</p>
         </div>
       {:else}
-        <div class="transfer-list">
+        <ul class="transfer-list">
           {#each transfers as transfer (transfer.id)}
             {@const statusInfo = getStatusInfo(transfer.status)}
-            <div class="transfer-item" style="--status-color: {statusInfo.color}">
+            <li class="transfer-item" style="--status-color: {statusInfo.color}">
               <div class="status-icon" aria-hidden="true">{statusInfo.icon}</div>
               <div class="transfer-details">
                 <div class="filename">
@@ -656,7 +668,7 @@
                 </div>
               </div>
               <div class="transfer-status">
-                <div class="status-text" aria-live="polite">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
+                <div class="status-text" role="status" aria-live="polite">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
                 <div class="progress-bar" aria-hidden="true">
                   <div class="progress-fill" style="width: {transfer.progress}%"></div>
                 </div>
@@ -675,9 +687,9 @@
                   </button>
                 {/if}
               </div>
-            </div>
+            </li>
           {/each}
-        </div>
+        </ul>
       {/if}
     </section>
 
@@ -863,7 +875,7 @@
 
   .segment.active {
     background-color: var(--color-bg-light);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     box-shadow: var(--shadow-1);
   }
 
@@ -907,6 +919,11 @@
   }
 
   .visibility-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
     background: none;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -929,7 +946,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     background-color: var(--color-primary-soft);
     padding: 0.1rem 0.375rem;
     border-radius: 999px;
@@ -949,6 +966,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+    /* Semantic list, visual chips. */
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .peer-chips li {
+    display: inline-flex;
+    max-width: 100%;
   }
 
   .peer-chip {
@@ -985,7 +1011,7 @@
     height: 1.5rem;
     border-radius: 50%;
     background-color: var(--color-primary-soft);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     font-weight: 800;
     font-size: 0.8rem;
     flex-shrink: 0;
@@ -1063,7 +1089,7 @@
     border: none;
     border-radius: var(--border-radius);
     background-color: var(--color-bg);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     font-family: var(--font-family-mono);
     font-size: clamp(0.95rem, 2.8vw, 1.15rem);
     font-weight: 700;
@@ -1111,7 +1137,8 @@
   }
 
   .input-group input:focus {
-    outline: none;
+    /* No outline:none — the global :focus-visible ring must survive for
+       keyboard users (WCAG 2.4.7); pointer focus shows border+glow only. */
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px var(--color-primary-soft);
   }
@@ -1215,6 +1242,7 @@
   }
 
   .history-clear {
+    min-height: 1.5rem;
     background: none;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -1232,7 +1260,8 @@
   }
 
   .btn.danger {
-    background-color: var(--color-red);
+    /* Darker red than --color-red: white label clears AA in both themes. */
+    background-color: var(--color-danger-strong);
     color: #fff;
   }
 
@@ -1240,7 +1269,7 @@
     font-weight: 600;
     text-transform: none;
     letter-spacing: 0;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
   }
 
   .empty-state {
@@ -1268,6 +1297,10 @@
     gap: 0.625rem;
     max-height: 420px;
     overflow-y: auto;
+    /* Semantic list, visual cards. */
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 
   .transfer-item {
@@ -1326,7 +1359,7 @@
   .peer-label {
     font-size: clamp(0.7rem, 2vw, 0.8rem);
     font-weight: 600;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     margin-left: 0.375rem;
   }
 
@@ -1380,7 +1413,7 @@
     border: none;
     padding: 0.2rem 0.5rem;
     border-radius: var(--radius-sm);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     cursor: pointer;
     word-break: break-all;
     font-size: clamp(0.7rem, 2vw, 0.8rem);
@@ -1435,7 +1468,7 @@
     font-size: clamp(0.72rem, 2vw, 0.82rem);
     font-weight: 700;
     background-color: var(--color-primary-soft);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     border: 1px solid var(--color-primary);
   }
 
@@ -1460,7 +1493,8 @@
     bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
-    background-color: var(--color-primary);
+    /* Strong tokens: white toast text clears AA in both themes. */
+    background-color: var(--color-primary-strong);
     color: white;
     padding: 0.875rem 1.5rem;
     border-radius: var(--border-radius);
@@ -1473,11 +1507,11 @@
   }
 
   .toast.success {
-    background-color: var(--color-green);
+    background-color: var(--color-primary-strong);
   }
 
   .toast.error {
-    background-color: var(--color-red);
+    background-color: var(--color-danger-strong);
   }
 
   @keyframes fade-in-out {
