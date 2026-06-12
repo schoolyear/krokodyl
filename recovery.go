@@ -63,6 +63,10 @@ func overallProgress(basePct, sessionPct int) int {
 	return display
 }
 
+// recoveryBackoffFn is the backoff the retry loop actually sleeps; a var so
+// tests can collapse the waits to zero.
+var recoveryBackoffFn = recoveryBackoff
+
 // recoveryBackoff grows the wait between attempts and caps it, so a hard-down
 // link is retried gently rather than in a tight loop.
 func recoveryBackoff(attempt int) time.Duration {

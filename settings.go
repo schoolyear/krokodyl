@@ -5,10 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 )
+
+// settingsMu serializes every load-modify-save of the settings file. Without
+// it two transfers finishing at once interleave their read/write cycles and
+// one update is silently lost (e.g. a partial-dir ref that then never gets
+// swept).
+var settingsMu sync.Mutex
 
 // appSettings holds the small bits of state worth remembering between runs.
 type appSettings struct {
@@ -74,31 +81,46 @@ func loadSettings(path string) appSettings {
 	return s
 }
 
+// updateSettings runs one atomic load-modify-save cycle under settingsMu.
+// All settings mutations must go through it so concurrent writers (two
+// transfers finishing together, a toggle racing a transfer) cannot lose each
+// other's changes.
+func updateSettings(path string, fn func(*appSettings)) error {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+	s := loadSettings(path)
+	fn(&s)
+	return saveSettings(path, s)
+}
+
 // ensureMachineID returns the stable per-install machine id, generating and
 // persisting one on first use. A persistence failure is non-fatal: the
 // returned id is still usable for this run.
 func ensureMachineID(path string) string {
-	s := loadSettings(path)
-	if s.MachineID != "" {
-		return s.MachineID
-	}
-	s.MachineID = uuid.NewString()
-	if err := saveSettings(path, s); err != nil {
+	id := ""
+	err := updateSettings(path, func(s *appSettings) {
+		if s.MachineID == "" {
+			s.MachineID = uuid.NewString()
+		}
+		id = s.MachineID
+	})
+	if err != nil {
 		logrus.WithError(err).Warn("could not persist machine id")
 	}
-	return s.MachineID
+	return id
 }
 
 // recordPartial remembers a preserved partial dir (best-effort).
 func recordPartial(path, dir string, nowUnix int64) {
-	s := loadSettings(path)
-	for _, r := range s.Partials {
-		if r.Dir == dir {
-			return // already tracked
+	err := updateSettings(path, func(s *appSettings) {
+		for _, r := range s.Partials {
+			if r.Dir == dir {
+				return // already tracked
+			}
 		}
-	}
-	s.Partials = append(s.Partials, partialRef{Dir: dir, At: nowUnix})
-	if err := saveSettings(path, s); err != nil {
+		s.Partials = append(s.Partials, partialRef{Dir: dir, At: nowUnix})
+	})
+	if err != nil {
 		logrus.WithError(err).Warn("could not record partial transfer")
 	}
 }
@@ -106,15 +128,16 @@ func recordPartial(path, dir string, nowUnix int64) {
 // forgetPartial drops a partial dir from tracking (after it is resumed,
 // completed, or deleted), best-effort.
 func forgetPartial(path, dir string) {
-	s := loadSettings(path)
-	kept := s.Partials[:0]
-	for _, r := range s.Partials {
-		if r.Dir != dir {
-			kept = append(kept, r)
+	err := updateSettings(path, func(s *appSettings) {
+		kept := s.Partials[:0]
+		for _, r := range s.Partials {
+			if r.Dir != dir {
+				kept = append(kept, r)
+			}
 		}
-	}
-	s.Partials = kept
-	if err := saveSettings(path, s); err != nil {
+		s.Partials = kept
+	})
+	if err != nil {
 		logrus.WithError(err).Warn("could not forget partial transfer")
 	}
 }
@@ -122,6 +145,8 @@ func forgetPartial(path, dir string) {
 // sweepPartials deletes abandoned partial dirs older than partialMaxAge and
 // prunes them from settings. Best-effort; called at startup.
 func sweepPartials(path string, nowUnix int64) {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
 	s := loadSettings(path)
 	if len(s.Partials) == 0 {
 		return
@@ -147,6 +172,10 @@ func sweepPartials(path string, nowUnix int64) {
 	}
 }
 
+// saveSettings writes atomically (temp file + rename) so a crash mid-write
+// can never tear the file — a torn settings file silently resets all state,
+// including partial-dir tracking. 0o600 matches history.json: the file holds
+// the machine id and filesystem paths.
 func saveSettings(path string, s appSettings) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -155,5 +184,13 @@ func saveSettings(path string, s appSettings) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }

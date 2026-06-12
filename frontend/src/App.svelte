@@ -37,6 +37,7 @@
   }
 
   interface OverwritePrompt {
+    promptId: string;
     transferId: string;
     fileName: string;
     oldSize: number;
@@ -323,10 +324,12 @@
   }
 
   async function handleOverwriteResponse(response: 'yes' | 'no') {
-    if (overwritePrompt) {
-      await RespondToOverwrite(overwritePrompt.transferId, response);
-      overwritePrompt = null;
-    }
+    if (!overwritePrompt) return;
+    // Clear the prompt before awaiting so a double-click or Enter+Escape
+    // can't send a second answer; the backend also ignores stale prompt ids.
+    const promptId = overwritePrompt.promptId;
+    overwritePrompt = null;
+    await RespondToOverwrite(promptId, response);
   }
 
   async function sendToNearbyPeer(peer: NearbyPeer) {

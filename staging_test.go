@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -156,5 +157,80 @@ func TestValidateRelPath(t *testing.T) {
 				t.Errorf("validateRelPath(%q) error = %v, wantErr %v", tt.rel, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestUnsafeWindowsSegment(t *testing.T) {
+	tests := []struct {
+		seg    string
+		unsafe bool
+	}{
+		{"file.txt", false},
+		{"console.log", false}, // prefix of a reserved name is fine
+		{"com10.txt", false},   // only COM1-9 are reserved
+		{"CON", true},
+		{"con", true},
+		{"Con.txt", true}, // reservation survives an extension
+		{"NUL", true},
+		{"nul.dat", true},
+		{"COM1", true},
+		{"lpt9.log", true},
+		{"trailing.", true}, // Win32 strips trailing dots
+		{"trailing ", true}, // ... and trailing spaces
+		{"normal name with spaces", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.seg, func(t *testing.T) {
+			if got := unsafeWindowsSegment(tt.seg); got != tt.unsafe {
+				t.Errorf("unsafeWindowsSegment(%q) = %v, want %v", tt.seg, got, tt.unsafe)
+			}
+		})
+	}
+}
+
+func TestValidateRelPathWindowsThreats(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("windows-only validation rules")
+	}
+	tests := []struct {
+		name string
+		rel  string
+	}{
+		{"reserved device name", "CON"},
+		{"reserved name nested", filepath.Join("sub", "NUL.txt")},
+		{"alternate data stream", "report.txt:hidden"},
+		{"trailing dot", "report."},
+		{"trailing space", "report "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateRelPath(tt.rel); err == nil {
+				t.Errorf("validateRelPath(%q) accepted an unsafe path", tt.rel)
+			}
+		})
+	}
+}
+
+func TestCopyFileLeavesNoTempAndReplacesAtomically(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src.txt")
+	dst := filepath.Join(dir, "dst.txt")
+	writeFile(t, src, "new content")
+	writeFile(t, dst, "old content") // pre-existing destination survives until the copy is whole
+
+	if err := copyFile(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new content" {
+		t.Errorf("dst = %q, want %q", got, "new content")
+	}
+	if _, err := os.Stat(dst + ".krokodyl-tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Error("temp file left behind after a successful copy")
 	}
 }

@@ -168,10 +168,12 @@ func TestValidateOfferRequest(t *testing.T) {
 }
 
 func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
-	// First offer's prompt never answered (manual respond), second must get busy.
+	// First offer's prompt arrived (offerPending signals) but is never
+	// answered; the second offer must get a busy answer.
+	offerPending := make(chan struct{})
 	var s *nearbyServer
 	s, port, fp, err := func() (*nearbyServer, int, string, error) {
-		return startNearbyServer(func(NearbyOffer) {}, func(string, string) {})
+		return startNearbyServer(func(NearbyOffer) { close(offerPending) }, func(string, string) {})
 	}()
 	if err != nil {
 		t.Fatal(err)
@@ -186,8 +188,12 @@ func TestNearbyServerBusyWithSecondOffer(t *testing.T) {
 		firstDone <- err
 	}()
 
-	// Give the first offer time to become pending.
-	time.Sleep(300 * time.Millisecond)
+	// Deterministic: the first offer is pending once its prompt fires.
+	select {
+	case <-offerPending:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first offer never reached the prompt")
+	}
 
 	answer, err := sendNearbyOffer([]string{"127.0.0.1"}, port, fp, offerRequest{
 		SenderName: "second", Files: []string{"b"}, Size: 1,

@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 )
 
@@ -183,5 +185,45 @@ func TestLoadSettingsCorruptFileReturnsZero(t *testing.T) {
 	out := loadSettings(path)
 	if out.LastDestination != "" {
 		t.Errorf("expected zero settings for corrupt file, got %+v", out)
+	}
+}
+
+func TestUpdateSettingsConcurrentWritersLoseNothing(t *testing.T) {
+	// The regression this guards: two transfers finishing at once used to
+	// interleave load-modify-save and silently drop one partial-dir ref.
+	path := filepath.Join(t.TempDir(), "settings.json")
+
+	const writers = 16
+	var wg sync.WaitGroup
+	for i := 0; i < writers; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			recordPartial(path, filepath.Join("part", string(rune('a'+n))), int64(n))
+		}(i)
+	}
+	wg.Wait()
+
+	if got := len(loadSettings(path).Partials); got != writers {
+		t.Errorf("settings kept %d partial refs, want %d (lost updates)", got, writers)
+	}
+}
+
+func TestSaveSettingsAtomicPermsAndNoTemp(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := saveSettings(path, appSettings{LastPeer: "Brave Otter"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file left behind after save")
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("settings perm = %o, want 0600", perm)
+		}
 	}
 }

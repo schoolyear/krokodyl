@@ -120,7 +120,12 @@ func startNearbyServer(onOffer func(NearbyOffer), onAccept func(senderName, code
 	}
 	fingerprint = certFingerprint(cert.Certificate[0])
 
-	listener, err := tls.Listen("tcp", ":0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	// Both endpoints are krokodyl on a modern Go runtime, so require TLS 1.3
+	// outright — no downgrade surface (e.g. via GODEBUG) to reason about.
+	listener, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+	})
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("could not open control channel: %w", err)
 	}
@@ -301,6 +306,7 @@ func sendNearbyOffer(candidates []string, port int, expectedFingerprint string, 
 func offerToAddress(addr string, port int, expectedFingerprint string, req offerRequest, code string) (answer offerAnswer, connected bool, err error) {
 	dialer := &net.Dialer{Timeout: perCandidateDialTimeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", net.JoinHostPort(addr, fmt.Sprint(port)), &tls.Config{
+		MinVersion: tls.VersionTLS13,
 		// Self-signed ephemeral certs have no CA chain or hostname to
 		// check; identity comes from pinning the certificate announced in
 		// the discovery payload instead.

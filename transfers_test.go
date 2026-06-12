@@ -109,3 +109,24 @@ func TestTransferManagerConcurrentUpdates(t *testing.T) {
 		t.Errorf("transfer a corrupted by concurrent updates: %+v", got)
 	}
 }
+
+func TestTransferManagerReset(t *testing.T) {
+	tm := newTransferManager(nil)
+	tm.add(FileTransfer{ID: "send-1", Status: FileTransferStatusCompleted})
+	tm.add(FileTransfer{ID: "receive-1", Status: FileTransferStatusError})
+
+	tm.reset()
+
+	if snap := tm.snapshot(); len(snap) != 0 {
+		t.Fatalf("snapshot after reset has %d transfers, want 0", len(snap))
+	}
+	if _, ok := tm.get("send-1"); ok {
+		t.Error("get found a transfer after reset")
+	}
+
+	// The manager must remain fully usable after a reset.
+	tm.add(FileTransfer{ID: "send-2", Status: FileTransferStatusPreparing})
+	if snap := tm.snapshot(); len(snap) != 1 || snap[0].ID != "send-2" {
+		t.Errorf("snapshot after reset+add = %+v, want just send-2", snap)
+	}
+}

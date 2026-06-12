@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +19,14 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
+// OverwritePrompt is the payload of a transfer:overwrite event asking the
+// user whether an existing destination file should be replaced.
 type OverwritePrompt struct {
+	// PromptID identifies this specific question. A multi-file transfer asks
+	// once per conflicting file, so responses are matched by prompt — never by
+	// transfer — or a stale answer (double-click, Enter+Escape) could silently
+	// decide the next file's fate.
+	PromptID   string `json:"promptId"`
 	TransferID string `json:"transferId"`
 	FileName   string `json:"fileName"`
 	OldSize    int64  `json:"oldSize"`
@@ -27,13 +35,17 @@ type OverwritePrompt struct {
 	NewModTime string `json:"newModTime"`
 }
 
-// App struct
+// App is the Wails-bound application core: it owns transfer state, spawns
+// per-transfer worker subprocesses, runs nearby discovery, and exposes the
+// methods the frontend calls.
 type App struct {
 	ctx context.Context
 	tm  *transferManager
 
-	mu                 sync.Mutex
-	workers            map[string]*exec.Cmd
+	mu      sync.Mutex
+	workers map[string]*exec.Cmd
+	// overwriteResponses is keyed by per-prompt id (not transfer id) so a
+	// stale answer can never decide a later prompt.
 	overwriteResponses map[string]chan string
 	cancels            map[string]chan struct{}
 
@@ -168,6 +180,7 @@ type NearbyPrefs struct {
 	LastPeer string `json:"lastPeer"`
 }
 
+// GetNearbyPrefs returns the persisted nearby preferences for the frontend.
 func (a *App) GetNearbyPrefs() NearbyPrefs {
 	prefs := NearbyPrefs{Visible: true}
 	if path, err := settingsPath(); err == nil {
@@ -184,9 +197,10 @@ func (a *App) GetNearbyPrefs() NearbyPrefs {
 // still send.
 func (a *App) SetNearbyVisible(visible bool) {
 	if path, err := settingsPath(); err == nil {
-		s := loadSettings(path)
-		s.NearbyVisible = &visible
-		if err := saveSettings(path, s); err != nil {
+		err := updateSettings(path, func(s *appSettings) {
+			s.NearbyVisible = &visible
+		})
+		if err != nil {
 			logrus.WithError(err).Warn("could not save visibility setting")
 		}
 	}
@@ -223,12 +237,7 @@ func (a *App) rememberLastPeer(name string) {
 	if err != nil {
 		return
 	}
-	s := loadSettings(path)
-	if s.LastPeer == name {
-		return
-	}
-	s.LastPeer = name
-	if err := saveSettings(path, s); err != nil {
+	if err := updateSettings(path, func(s *appSettings) { s.LastPeer = name }); err != nil {
 		logrus.WithError(err).Warn("could not save last peer")
 	}
 }
@@ -322,19 +331,10 @@ func (a *App) performPeerSend(id string, peer NearbyPeer, paths, names []string,
 	}, code)
 
 	abort := func(message string) {
-		// Terminal state first: the worker's exit must not overwrite it.
+		// Terminal state first: the worker's exit must not overwrite it, and
+		// runWorkerJob kills any worker that registers after this point (so
+		// there is no registration race to wait out).
 		a.failTransfer(id, message)
-		// The worker goroutine may not have registered itself yet; wait
-		// briefly so the kill actually lands.
-		for i := 0; i < 20; i++ {
-			a.mu.Lock()
-			_, registered := a.workers[id]
-			a.mu.Unlock()
-			if registered {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
 		a.killWorker(id)
 	}
 
@@ -361,6 +361,7 @@ func (a *App) RespondToNearbyOffer(offerID string, accept bool) {
 	}
 }
 
+// GetNearbyPeers returns the currently visible nearby devices.
 func (a *App) GetNearbyPeers() []NearbyPeer {
 	if a.nearby == nil {
 		return nil
@@ -432,14 +433,18 @@ func (a *App) shutdown(_ context.Context) {
 	}
 }
 
+// GetTransfers returns all transfers, newest first.
 func (a *App) GetTransfers() []FileTransfer {
 	return a.tm.snapshot()
 }
 
+// SendFile starts a code-based send of a single file.
 func (a *App) SendFile(filePath string) (string, error) {
 	return a.SendFiles([]string{filePath})
 }
 
+// SendFiles starts a code-based send and returns the transfer id; the
+// shareable code arrives on the transfer:updated event once the room is open.
 func (a *App) SendFiles(paths []string) (string, error) {
 	return a.sendFilesWithCode(paths, "")
 }
@@ -519,13 +524,7 @@ func (a *App) ResendTransfer(id string) ResendOutcome {
 		return ResendOutcome{Message: "Can't repeat — these files no longer exist: " + strings.Join(missing, ", ")}
 	}
 
-	// A dropped transfer (failed, with its code kept) can resume: reuse the
-	// same code so the receiver continues from the partial it preserved.
-	resume := t.Status == FileTransferStatusError && t.ResumeCode != ""
-	code := ""
-	if resume {
-		code = t.ResumeCode
-	}
+	code, resume := resendCode(t)
 
 	// Not a peer send — plain code resend (waiting for a code is the point).
 	if t.Peer == "" {
@@ -549,6 +548,16 @@ func (a *App) ResendTransfer(id string) ResendOutcome {
 		return ResendOutcome{Started: true, Message: "Resuming transfer to " + t.Peer + "."}
 	}
 	return ResendOutcome{Started: true, Message: "Sending again to " + t.Peer + "."}
+}
+
+// resendCode decides whether repeating t is a resume of a dropped transfer —
+// failed with its code preserved — in which case the same code is reused so
+// the receiver continues from the partial it kept under that code.
+func resendCode(t FileTransfer) (code string, resume bool) {
+	if t.Status == FileTransferStatusError && t.ResumeCode != "" {
+		return t.ResumeCode, true
+	}
+	return "", false
 }
 
 // findPeerForResend prefers the stable machine id and falls back to the
@@ -820,21 +829,51 @@ func (a *App) finalizeReceive(id, stagingDir, destinationPath string, cancelCh c
 	})
 }
 
+// registerOverwritePrompt creates a fresh per-prompt response channel keyed
+// by a unique prompt id. Keying by prompt — not transfer — means a stale
+// response can never be consumed by a later prompt of the same transfer.
+func (a *App) registerOverwritePrompt() (promptID string, ch chan string) {
+	promptID = uuid.NewString()
+	ch = make(chan string, 1)
+	a.mu.Lock()
+	a.overwriteResponses[promptID] = ch
+	a.mu.Unlock()
+	return promptID, ch
+}
+
+func (a *App) removeOverwritePrompt(promptID string) {
+	a.mu.Lock()
+	delete(a.overwriteResponses, promptID)
+	a.mu.Unlock()
+}
+
+// resolveOverwrite delivers the user's answer to the prompt's channel.
+// Unknown ids (answered, cancelled, or stale duplicates) are no-ops.
+func (a *App) resolveOverwrite(promptID, response string) {
+	a.mu.Lock()
+	responseChan, ok := a.overwriteResponses[promptID]
+	if ok {
+		delete(a.overwriteResponses, promptID)
+	}
+	a.mu.Unlock()
+
+	if ok {
+		select {
+		case responseChan <- response:
+		default:
+		}
+	}
+}
+
 // promptOverwrite asks the frontend whether an existing file should be
 // replaced and blocks until the user answers or the transfer is cancelled
 // (cancel/shutdown count as "no").
 func (a *App) promptOverwrite(id string, sf stagedFile, existing os.FileInfo, cancelCh chan struct{}) bool {
-	responseChan := make(chan string, 1)
-	a.mu.Lock()
-	a.overwriteResponses[id] = responseChan
-	a.mu.Unlock()
-	defer func() {
-		a.mu.Lock()
-		delete(a.overwriteResponses, id)
-		a.mu.Unlock()
-	}()
+	promptID, responseChan := a.registerOverwritePrompt()
+	defer a.removeOverwritePrompt(promptID)
 
 	runtime.EventsEmit(a.ctx, TransferEventOverwrite, OverwritePrompt{
+		PromptID:   promptID,
 		TransferID: id,
 		FileName:   sf.RelPath,
 		OldSize:    existing.Size(),
@@ -851,20 +890,10 @@ func (a *App) promptOverwrite(id string, sf stagedFile, existing os.FileInfo, ca
 	}
 }
 
-func (a *App) RespondToOverwrite(transferID string, response string) {
-	a.mu.Lock()
-	responseChan, ok := a.overwriteResponses[transferID]
-	if ok {
-		delete(a.overwriteResponses, transferID)
-	}
-	a.mu.Unlock()
-
-	if ok {
-		select {
-		case responseChan <- response:
-		default:
-		}
-	}
+// RespondToOverwrite resolves an overwrite prompt by its prompt id (from the
+// OverwritePrompt payload). Late or duplicate responses are ignored.
+func (a *App) RespondToOverwrite(promptID string, response string) {
+	a.resolveOverwrite(promptID, response)
 }
 
 // CancelTransfer kills the worker process behind a transfer and signals every
@@ -966,8 +995,10 @@ func (a *App) runRecoverableAttempts(id string, cancelCh chan struct{}, attempt 
 			return true
 		}
 
-		// User cancel is final — never auto-retry.
-		if t, ok := a.tm.get(id); ok && t.Status == FileTransferStatusCancelled {
+		// Any terminal state is final — user cancel, a declined nearby offer
+		// failing the transfer, or anything else that already decided the
+		// outcome. Retrying a dead transfer only spawns pointless workers.
+		if t, ok := a.tm.get(id); ok && t.Status.isTerminal() {
 			return false
 		}
 
@@ -981,7 +1012,7 @@ func (a *App) runRecoverableAttempts(id string, cancelCh chan struct{}, attempt 
 			t.Status = FileTransferStatusReconnecting
 			t.Speed = 0
 		})
-		if !a.sleepOrCancel(cancelCh, recoveryBackoff(n)) {
+		if !a.sleepOrCancel(cancelCh, recoveryBackoffFn(n)) {
 			return false // cancelled during backoff
 		}
 	}
@@ -1037,6 +1068,15 @@ func (a *App) runWorkerJob(id string, job workerJob, onEvent func(workerEvent)) 
 		a.mu.Unlock()
 	}()
 
+	// The transfer may have gone terminal (cancel, declined offer) in the
+	// window before this worker registered — a kill issued then found nothing
+	// to kill. Re-checking here closes that race from the other side.
+	if t, ok := a.tm.get(id); ok && t.Status.isTerminal() {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return "transfer was cancelled", fmt.Errorf("transfer %s ended before its worker started", id)
+	}
+
 	if err := json.NewEncoder(stdin).Encode(job); err != nil {
 		stdin.Close()
 		cmd.Process.Kill()
@@ -1045,22 +1085,7 @@ func (a *App) runWorkerJob(id string, job workerJob, onEvent func(workerEvent)) 
 	}
 	stdin.Close()
 
-	errMsg := ""
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		var ev workerEvent
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
-			logrus.WithError(err).Warn("ignoring malformed worker event")
-			continue
-		}
-		if ev.Type == "error" {
-			errMsg = ev.Message
-			continue
-		}
-		onEvent(ev)
-	}
-	scanErr := scanner.Err()
+	errMsg, scanErr := scanWorkerEvents(stdout, onEvent)
 
 	if err := cmd.Wait(); err != nil {
 		if errMsg == "" {
@@ -1079,6 +1104,29 @@ func (a *App) runWorkerJob(id string, job workerJob, onEvent func(workerEvent)) 
 	return "", nil
 }
 
+// scanWorkerEvents consumes the worker's stdout event stream: JSON events go
+// to onEvent, "error" events are captured as the worker's failure message,
+// and malformed lines are logged and skipped (one bad line must not kill the
+// transfer). Returns the captured error message and any stream read error.
+func scanWorkerEvents(r io.Reader, onEvent func(workerEvent)) (errMsg string, scanErr error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var ev workerEvent
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+			logrus.WithError(err).Warn("ignoring malformed worker event")
+			continue
+		}
+		if ev.Type == "error" {
+			errMsg = ev.Message
+			continue
+		}
+		onEvent(ev)
+	}
+	return errMsg, scanner.Err()
+}
+
+// SelectFile opens the native single-file picker.
 func (a *App) SelectFile() (string, error) {
 	selection, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select file to send",
@@ -1090,6 +1138,7 @@ func (a *App) SelectFile() (string, error) {
 	return selection, nil
 }
 
+// SelectFiles opens the native multi-file picker.
 func (a *App) SelectFiles() ([]string, error) {
 	selection, err := runtime.OpenMultipleFilesDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select files to send",
@@ -1101,6 +1150,7 @@ func (a *App) SelectFiles() ([]string, error) {
 	return selection, nil
 }
 
+// SelectDirectory opens the native folder picker.
 func (a *App) SelectDirectory() (string, error) {
 	selection, err := runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
 		Title: "Select destination directory",
@@ -1176,12 +1226,8 @@ func (a *App) rememberDestination(destination string) {
 	if err != nil {
 		return
 	}
-	s := loadSettings(path)
-	if s.LastDestination == destination {
-		return
-	}
-	s.LastDestination = destination
-	if err := saveSettings(path, s); err != nil {
+	err = updateSettings(path, func(s *appSettings) { s.LastDestination = destination })
+	if err != nil {
 		logrus.WithError(err).Warn("could not save settings")
 	}
 }
