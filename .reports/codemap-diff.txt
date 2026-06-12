@@ -1,0 +1,34 @@
+codemap scan — 2026-06-12
+=========================
+mode: INITIAL (no prior codemaps; diff = 100% new, no approval gate triggered)
+
+generated:
+  docs/CODEMAPS/architecture.md   ~750 tok
+  docs/CODEMAPS/backend.md        ~850 tok
+  docs/CODEMAPS/frontend.md       ~700 tok
+  docs/CODEMAPS/data.md           ~650 tok
+  docs/CODEMAPS/dependencies.md   ~550 tok
+
+scanned:
+  Go (package main, non-test): 14 files / 3319 LOC  (app.go 1187 dominant)
+  Go tests:                    ~13 _test.go
+  frontend/src:                17 files (App.svelte 1602 LOC, 6 locales)
+  frontend/wailsjs:            6 GENERATED files
+
+architecture notes:
+  - project type: single Wails v2 desktop app (Go + Svelte 5), one binary / two modes
+  - no HTTP routes, no DB → codemaps adapted: Wails App methods + worker/discovery protocols + JSON-file state
+  - 19 Wails-bound App methods; 6 frontend-subscribed runtime events
+  - subsystems: entry/dispatch · worker subprocess · resilience(recovery/stall) · transfer state · resume staging · LAN discovery(multicast+TLS) · persistence
+
+new dependencies detected (vs none prior):
+  go: wails/v2 v2.12.0, croc/v10 v10.4.4, peerdiscovery v1.7.6, logrus v1.9.4, uuid v1.6.0
+  npm: svelte 5.36.7, vite 6.3.5, svelte-i18n 4.0.1, svelte-check 4.3.0, typescript 5.9.3
+
+staleness: n/a (first generation)
+
+watch-list (high-churn / fragile):
+  - app.go (1187 LOC) — orchestration hub; consider splitting if it grows
+  - App.svelte (1602 LOC) — monolithic UI; component extraction candidate
+  - stagingDirForCode — deterministic, no version field → any change orphans partials
+  - .github/workflows/release.yml Wails pin must track go.mod (v2.12.0)

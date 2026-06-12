@@ -4,3 +4,6 @@ frontend/dist
 
 # stray local build artifact
 /krokodyl.exe
+
+# personal, machine-specific Claude context
+.claude.local.md
