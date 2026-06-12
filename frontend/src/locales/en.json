@@ -11,7 +11,12 @@
     "title": "Send a File",
     "description": "Select a file to generate a secure transfer code.",
     "button": "Select & Send File",
-    "button_sending": "Sending..."
+    "button_sending": "Sending...",
+    "drop_hint": "Drop files anywhere here",
+    "drop_or": "or",
+    "button_browse": "Choose files…",
+    "share_code": "Share this code with the receiver",
+    "code_hint": "They enter it in their Receive tab — the transfer starts automatically."
   },
   "receive": {
     "title": "Receive a File",
@@ -24,12 +29,20 @@
   },
   "history": {
     "title": "History",
-    "empty_state": "No transfers yet. Send or receive a file to get started!"
+    "empty_state": "No transfers yet. Send or receive a file to get started!",
+    "clear": "Clear",
+    "clear_confirm": "Clear all transfer history? This cannot be undone.",
+    "clear_yes": "Clear history",
+    "cancel": "Cancel",
+    "you_are": "You are"
   },
   "transfer": {
     "unknown_file": "Unknown File",
     "code_label": "Code:",
-    "copy_prompt": "Click to copy"
+    "copy_prompt": "Click to copy",
+    "cancel": "Cancel",
+    "resend": "Send again",
+    "resend_fallback": "{name} isn’t nearby — sending with a code instead"
   },
   "status": {
     "completed": "completed",
@@ -37,7 +50,8 @@
     "waiting": "waiting",
     "sending": "sending",
     "receiving": "receiving",
-    "preparing": "preparing"
+    "preparing": "preparing",
+    "cancelled": "cancelled"
   },
   "toasts": {
     "transfer_completed": "Transfer completed! 🎉",
@@ -49,7 +63,8 @@
     "missing_info": "Please enter a code and select a destination.",
     "download_started": "Starting download...",
     "receive_failed": "Failed to receive file.",
-    "copied_to_clipboard": "Copied to clipboard! 👍"
+    "copied_to_clipboard": "Copied to clipboard! 👍",
+    "transfer_cancelled": "Transfer cancelled."
   },
   "overwrite": {
     "title": "File Exists",
@@ -57,6 +72,31 @@
     "current_size": "Current size",
     "new_size": "New size",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "current_modified": "Modified (current)",
+    "new_modified": "Modified (new)"
+  },
+  "titlebar": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "close": "Close"
+  },
+  "nearby": {
+    "title": "Nearby devices",
+    "empty": "No devices found — open krokodyl on the other machine, same network.",
+    "unavailable": "Discovery is blocked on this network — share a code instead.",
+    "soon": "Sending to devices arrives in the next update",
+    "visible": "Visible to others",
+    "hidden": "Hidden — others can’t see you",
+    "recent": "recent"
+  },
+  "offer": {
+    "title": "Incoming transfer",
+    "from": "{name} wants to send you:",
+    "accept": "Accept",
+    "decline": "Decline",
+    "to": "to",
+    "from_label": "from",
+    "declined": "Transfer declined"
   }
 }
