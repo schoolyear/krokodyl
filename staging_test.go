@@ -170,7 +170,9 @@ func TestUnsafeWindowsSegment(t *testing.T) {
 		{"com10.txt", false},   // only COM1-9 are reserved
 		{"CON", true},
 		{"con", true},
-		{"Con.txt", true}, // reservation survives an extension
+		{"Con.txt", true},   // reservation survives an extension
+		{" con.txt", false}, // leading space: NOT a device name on Windows
+		{"con .txt", true},  // trailing space in the stem still matches CON
 		{"NUL", true},
 		{"nul.dat", true},
 		{"COM1", true},

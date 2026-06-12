@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -137,7 +139,7 @@ func TestSweepPartialsRemovesStaleDirs(t *testing.T) {
 
 	sweepPartials(path, now)
 
-	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+	if _, err := os.Stat(stale); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("stale partial dir should have been removed")
 	}
 	if _, err := os.Stat(fresh); err != nil {
@@ -214,7 +216,7 @@ func TestSaveSettingsAtomicPermsAndNoTemp(t *testing.T) {
 	if err := saveSettings(path, appSettings{LastPeer: "Brave Otter"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+	if _, err := os.Stat(path + ".tmp"); !errors.Is(err, fs.ErrNotExist) {
 		t.Error("temp file left behind after save")
 	}
 	if runtime.GOOS != "windows" {

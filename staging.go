@@ -123,7 +123,10 @@ func unsafeWindowsSegment(seg string) bool {
 	if i := strings.IndexByte(base, '.'); i >= 0 {
 		base = base[:i]
 	}
-	return windowsReservedNames[strings.ToLower(strings.TrimSpace(base))]
+	// Win32 strips only TRAILING dots/spaces from the stem when matching
+	// device names ("con .txt" is CON, " con.txt" is not), so trim right only
+	// — trimming leading spaces would reject legitimate names.
+	return windowsReservedNames[strings.ToLower(strings.TrimRight(base, " ."))]
 }
 
 // renameFunc is injected so tests can simulate cross-device rename failures.

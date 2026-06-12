@@ -119,6 +119,7 @@ func TestRunRecoverableAttemptsStopsOnTerminalTransfer(t *testing.T) {
 }
 
 func TestRunRecoverableAttemptsGivesUpWithoutProgress(t *testing.T) {
+	// Mutates package-level recoveryBackoffFn — must not run in parallel.
 	orig := recoveryBackoffFn
 	recoveryBackoffFn = func(int) time.Duration { return 0 }
 	defer func() { recoveryBackoffFn = orig }()
@@ -163,6 +164,7 @@ func TestRunRecoverableAttemptsCancelDuringBackoff(t *testing.T) {
 }
 
 func TestRunRecoverableAttemptsOffsetsBaseProgress(t *testing.T) {
+	// Mutates package-level recoveryBackoffFn — must not run in parallel.
 	orig := recoveryBackoffFn
 	recoveryBackoffFn = func(int) time.Duration { return 0 }
 	defer func() { recoveryBackoffFn = orig }()
