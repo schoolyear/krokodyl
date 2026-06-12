@@ -59,7 +59,9 @@ func saveHistory(path string, transfers []FileTransfer) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	// 0o600: history may hold resume codes (one-time transfer secrets), so
+	// keep it readable only by the owner.
+	return os.WriteFile(path, data, 0o600)
 }
 
 // clearHistory removes the persisted history. A missing file is already a

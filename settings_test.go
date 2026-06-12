@@ -146,6 +146,27 @@ func TestSweepPartialsRemovesStaleDirs(t *testing.T) {
 	}
 }
 
+func TestSweepPartialsRefusesNonPartialPath(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "settings.json")
+
+	// A tampered settings entry pointing at a non-partial directory must
+	// never be deleted, even when expired.
+	precious := filepath.Join(base, "important-data")
+	if err := os.MkdirAll(precious, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	now := int64(2_000_000)
+	recordPartial(path, precious, now-partialMaxAge-100)
+
+	sweepPartials(path, now)
+
+	if _, err := os.Stat(precious); err != nil {
+		t.Error("sweep must not delete a path that is not a krokodyl partial dir")
+	}
+}
+
 func TestLoadSettingsMissingFileReturnsZero(t *testing.T) {
 	out := loadSettings(filepath.Join(t.TempDir(), "nope.json"))
 	if out.LastDestination != "" {

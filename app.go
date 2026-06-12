@@ -191,10 +191,14 @@ func (a *App) SetNearbyVisible(visible bool) {
 		}
 	}
 
-	if a.stopDiscovery == nil || a.nearby == nil {
+	// Guard the nearby fields: this runs on a frontend-call goroutine while
+	// shutdown may touch the same fields on another.
+	a.mu.Lock()
+	stop := a.stopDiscovery
+	if stop == nil || a.nearby == nil {
+		a.mu.Unlock()
 		return
 	}
-	a.stopDiscovery()
 	// Becoming visible again bumps the generation so peers that still hold a
 	// goodbye-suppression window for us accept the return announcement
 	// immediately instead of waiting it out.
@@ -202,7 +206,15 @@ func (a *App) SetNearbyVisible(visible bool) {
 		a.nearbyGen++
 		a.nearbyIdentity.Gen = a.nearbyGen
 	}
-	a.stopDiscovery = startDiscovery(a.nearbyIdentity, a.nearby, a.nearbyEmitState, visible)
+	identity, nearby, emitState := a.nearbyIdentity, a.nearby, a.nearbyEmitState
+	a.mu.Unlock()
+
+	stop()
+	newStop := startDiscovery(identity, nearby, emitState, visible)
+
+	a.mu.Lock()
+	a.stopDiscovery = newStop
+	a.mu.Unlock()
 }
 
 // rememberLastPeer persists the most recent zero-code target, best-effort.
@@ -388,11 +400,15 @@ func (a *App) popCancel(id string) (chan struct{}, bool) {
 // shutdown kills live transfer workers so closing the app never leaves
 // orphan processes or blocked transfers behind.
 func (a *App) shutdown(_ context.Context) {
-	if a.stopDiscovery != nil {
-		a.stopDiscovery()
+	a.mu.Lock()
+	stop := a.stopDiscovery
+	srv := a.nearbySrv
+	a.mu.Unlock()
+	if stop != nil {
+		stop()
 	}
-	if a.nearbySrv != nil {
-		a.nearbySrv.close()
+	if srv != nil {
+		srv.close()
 	}
 
 	a.mu.Lock()
@@ -634,16 +650,6 @@ func (a *App) runSendAttempt(id string, job workerJob, grace time.Duration, base
 	return peak, workerErrMsg, err
 }
 
-// overallProgress maps a worker's per-session percent into the band above the
-// progress already achieved, capped at 99 (only completion shows 100).
-func overallProgress(basePct, sessionPct int) int {
-	display := basePct + sessionPct
-	if display > 99 {
-		return 99
-	}
-	return display
-}
-
 func (a *App) ReceiveFile(code, destinationPath string) (string, error) {
 	return a.startReceive(code, destinationPath, "")
 }
@@ -744,7 +750,9 @@ func (a *App) runReceiveAttempt(id string, job workerJob, grace time.Duration, b
 // cleanupStaging removes a staging dir and stops tracking it as a resumable
 // partial. Used when a transfer completes or is cancelled (not when it drops).
 func (a *App) cleanupStaging(stagingDir string) {
-	os.RemoveAll(stagingDir)
+	if err := os.RemoveAll(stagingDir); err != nil {
+		logrus.WithError(err).Warnf("could not remove staging dir %s", stagingDir)
+	}
 	if sp, err := settingsPath(); err == nil {
 		forgetPartial(sp, stagingDir)
 	}
@@ -932,8 +940,10 @@ func (a *App) startStallWatchdog(id string, tracker *stallTracker, connectGrace 
 
 // sleepOrCancel waits d, returning false if the transfer is cancelled first.
 func (a *App) sleepOrCancel(cancelCh chan struct{}, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
 	select {
-	case <-time.After(d):
+	case <-t.C:
 		return true
 	case <-cancelCh:
 		return false
@@ -1008,10 +1018,13 @@ func (a *App) runWorkerJob(id string, job workerJob, onEvent func(workerEvent)) 
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		stdin.Close()
 		return "failed to start transfer worker", err
 	}
 
 	if err := cmd.Start(); err != nil {
+		stdin.Close()
+		stdout.Close()
 		return "failed to start transfer worker", err
 	}
 

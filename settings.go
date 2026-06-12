@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -130,6 +131,12 @@ func sweepPartials(path string, nowUnix int64) {
 		return
 	}
 	for _, r := range expired {
+		// Defence in depth: only ever delete our own partial directories,
+		// never an arbitrary path a tampered settings file might contain.
+		if !strings.HasPrefix(filepath.Base(r.Dir), partialDirPrefix) {
+			logrus.Warnf("skipping sweep of unexpected partial path: %s", r.Dir)
+			continue
+		}
 		if err := os.RemoveAll(r.Dir); err != nil {
 			logrus.WithError(err).Warnf("could not remove stale partial %s", r.Dir)
 		}

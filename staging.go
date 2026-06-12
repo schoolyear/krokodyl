@@ -13,6 +13,10 @@ import (
 	"time"
 )
 
+// partialDirPrefix marks krokodyl's staging directories so cleanup can never
+// touch anything else.
+const partialDirPrefix = ".krokodyl-partial-"
+
 // stagingDirForCode derives a deterministic staging directory from the
 // transfer code, inside the destination (kept on the same volume so the final
 // rename never crosses devices). Deterministic-per-code is what makes resume
@@ -21,7 +25,7 @@ import (
 // leaks the shared secret.
 func stagingDirForCode(destinationPath, code string) string {
 	sum := sha256.Sum256([]byte(code))
-	return filepath.Join(destinationPath, ".krokodyl-partial-"+hex.EncodeToString(sum[:8]))
+	return filepath.Join(destinationPath, partialDirPrefix+hex.EncodeToString(sum[:8]))
 }
 
 // stagedFile describes one received file inside a staging directory,
