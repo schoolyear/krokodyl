@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -67,7 +69,7 @@ func saveHistory(path string, transfers []FileTransfer) error {
 // clearHistory removes the persisted history. A missing file is already a
 // clear state, so its absence is not an error.
 func clearHistory(path string) error {
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

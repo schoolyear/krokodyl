@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"math/big"
+	"strings"
 )
 
 // Friendly, human-readable instance names ("Brave Otter"). The raw OS
@@ -38,4 +39,26 @@ func pick(words []string) string {
 		return words[0]
 	}
 	return words[n.Int64()]
+}
+
+// sanitizeDisplayName strips characters a hostile peer can use to forge log
+// lines or visually reorder UI text: ASCII control characters (\n, \r, ANSI
+// escapes) and Unicode bidirectional override/embedding marks (which could
+// make "Accept files from X?" read as something else). Applied at decode time
+// to every peer-supplied display string — device names and offered file
+// names.
+func sanitizeDisplayName(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r < 0x20 || r == 0x7f: // C0 controls + DEL (covers \e of ANSI)
+			return -1
+		case r >= 0x202a && r <= 0x202e: // LRE, RLE, PDF, LRO, RLO
+			return -1
+		case r >= 0x2066 && r <= 0x2069: // LRI, RLI, FSI, PDI
+			return -1
+		case r == 0x200e || r == 0x200f || r == 0x061c: // LRM, RLM, ALM
+			return -1
+		}
+		return r
+	}, s)
 }

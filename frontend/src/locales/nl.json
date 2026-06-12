@@ -1,6 +1,5 @@
 {
   "app": {
-    "title": "🐊 Krokodyl",
     "subtitle": "Veilig, snel en eenvoudig P2P bestanden delen."
   },
   "tabs": {
@@ -8,8 +7,6 @@
     "receive": "Ontvangen"
   },
   "send": {
-    "title": "Verstuur een Bestand",
-    "description": "Selecteer een bestand om een veilige overdrachtscode te genereren.",
     "button": "Selecteer & Verstuur Bestand",
     "button_sending": "Bezig met verzenden...",
     "drop_hint": "Sleep bestanden hierheen",
@@ -38,11 +35,9 @@
   },
   "transfer": {
     "unknown_file": "Onbekend Bestand",
-    "code_label": "Code:",
     "copy_prompt": "Klik om te kopiëren",
     "cancel": "Annuleren",
-    "resend": "Opnieuw versturen",
-    "resend_fallback": "{name} is niet in de buurt — wordt verzonden met een code"
+    "resend": "Opnieuw versturen"
   },
   "status": {
     "completed": "voltooid",
@@ -86,7 +81,6 @@
     "title": "Apparaten in de buurt",
     "empty": "Geen apparaten gevonden — open krokodyl op de andere machine, zelfde netwerk.",
     "unavailable": "Detectie is geblokkeerd op dit netwerk — deel in plaats daarvan een code.",
-    "soon": "Versturen naar apparaten komt in de volgende update",
     "visible": "Zichtbaar voor anderen",
     "hidden": "Verborgen — anderen zien je niet",
     "recent": "recent"
@@ -97,7 +91,27 @@
     "accept": "Accepteren",
     "decline": "Weigeren",
     "to": "naar",
-    "from_label": "van",
-    "declined": "Overdracht geweigerd"
+    "from_label": "van"
+  },
+  "a11y": {
+    "tabs": "Versturen of ontvangen",
+    "send_to": "Verstuur naar {name}",
+    "code_hint": "Een geldige code plakken of op Enter drukken start de overdracht.",
+    "copy_code": "Kopieer transfercode {code}",
+    "theme_dark": "Schakel naar donker thema",
+    "theme_light": "Schakel naar licht thema",
+    "language": "Taal"
+  },
+  "verify": {
+    "title": "Ontvangen bestanden komen niet overeen met het aanbod",
+    "prompt": "Wat is binnengekomen verschilt van wat je accepteerde:",
+    "keep": "Bestanden toch bewaren",
+    "discard": "Weggooien"
+  },
+  "resend": {
+    "title": "Opnieuw versturen?",
+    "prompt": "Dezelfde bestanden versturen naar {name} op {addr}?",
+    "confirm": "Versturen",
+    "cancel": "Annuleren"
   }
 }

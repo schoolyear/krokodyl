@@ -1,6 +1,5 @@
 {
   "app": {
-    "title": "🐊 Krokodyl",
     "subtitle": "Biztonságos, gyors és egyszerű P2P fájlmegosztás."
   },
   "tabs": {
@@ -8,8 +7,6 @@
     "receive": "Fogadás"
   },
   "send": {
-    "title": "Fájl küldése",
-    "description": "Válassz egy fájlt a biztonságos átvitelkód generálásához.",
     "button": "Fájl kiválasztása és küldése",
     "button_sending": "Küldés...",
     "drop_hint": "Húzd ide a fájlokat",
@@ -38,11 +35,9 @@
   },
   "transfer": {
     "unknown_file": "Ismeretlen fájl",
-    "code_label": "Kód:",
     "copy_prompt": "Kattints a másoláshoz",
     "cancel": "Mégse",
-    "resend": "Újraküldés",
-    "resend_fallback": "{name} nincs a közelben — kóddal küldjük"
+    "resend": "Újraküldés"
   },
   "status": {
     "completed": "befejezve",
@@ -86,7 +81,6 @@
     "title": "Közeli eszközök",
     "empty": "Nincs eszköz — nyisd meg a krokodylt a másik gépen, azonos hálózaton.",
     "unavailable": "A felderítés blokkolva van ezen a hálózaton — ossz meg kódot helyette.",
-    "soon": "Az eszközökre küldés a következő frissítésben érkezik",
     "visible": "Látható mások számára",
     "hidden": "Rejtett — mások nem látnak",
     "recent": "legutóbbi"
@@ -97,7 +91,27 @@
     "accept": "Elfogadás",
     "decline": "Elutasítás",
     "to": "ide:",
-    "from_label": "tőle:",
-    "declined": "Átvitel elutasítva"
+    "from_label": "tőle:"
+  },
+  "a11y": {
+    "tabs": "Küldés vagy fogadás",
+    "send_to": "Küldés ide: {name}",
+    "code_hint": "Érvényes kód beillesztése vagy az Enter lenyomása elindítja az átvitelt.",
+    "copy_code": "Átviteli kód másolása: {code}",
+    "theme_dark": "Váltás sötét témára",
+    "theme_light": "Váltás világos témára",
+    "language": "Nyelv"
+  },
+  "verify": {
+    "title": "A kapott fájlok nem egyeznek az ajánlattal",
+    "prompt": "Ami megérkezett, eltér attól, amit elfogadtál:",
+    "keep": "Fájlok megtartása mégis",
+    "discard": "Elvetés"
+  },
+  "resend": {
+    "title": "Újraküldés?",
+    "prompt": "Ugyanezeket a fájlokat küldöd ide: {name} ({addr})?",
+    "confirm": "Küldés",
+    "cancel": "Mégse"
   }
 }

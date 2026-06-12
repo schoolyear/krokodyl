@@ -1,6 +1,5 @@
 {
   "app": {
-    "title": "🐊 Krokodyl",
     "subtitle": "Secure, fast, and simple P2P file sharing."
   },
   "tabs": {
@@ -8,8 +7,6 @@
     "receive": "Receive"
   },
   "send": {
-    "title": "Send a File",
-    "description": "Select a file to generate a secure transfer code.",
     "button": "Select & Send File",
     "button_sending": "Sending...",
     "drop_hint": "Drop files anywhere here",
@@ -38,11 +35,9 @@
   },
   "transfer": {
     "unknown_file": "Unknown File",
-    "code_label": "Code:",
     "copy_prompt": "Click to copy",
     "cancel": "Cancel",
-    "resend": "Send again",
-    "resend_fallback": "{name} isn’t nearby — sending with a code instead"
+    "resend": "Send again"
   },
   "status": {
     "completed": "completed",
@@ -86,7 +81,6 @@
     "title": "Nearby devices",
     "empty": "No devices found — open krokodyl on the other machine, same network.",
     "unavailable": "Discovery is blocked on this network — share a code instead.",
-    "soon": "Sending to devices arrives in the next update",
     "visible": "Visible to others",
     "hidden": "Hidden — others can’t see you",
     "recent": "recent"
@@ -97,7 +91,27 @@
     "accept": "Accept",
     "decline": "Decline",
     "to": "to",
-    "from_label": "from",
-    "declined": "Transfer declined"
+    "from_label": "from"
+  },
+  "a11y": {
+    "tabs": "Send or receive",
+    "send_to": "Send to {name}",
+    "code_hint": "Pasting a valid code, or pressing Enter, starts the transfer.",
+    "copy_code": "Copy transfer code {code}",
+    "theme_dark": "Switch to dark theme",
+    "theme_light": "Switch to light theme",
+    "language": "Language"
+  },
+  "verify": {
+    "title": "Received files don't match the offer",
+    "prompt": "What arrived differs from what you accepted:",
+    "keep": "Keep files anyway",
+    "discard": "Discard"
+  },
+  "resend": {
+    "title": "Send again?",
+    "prompt": "Send the same files to {name} at {addr}?",
+    "confirm": "Send",
+    "cancel": "Cancel"
   }
 }

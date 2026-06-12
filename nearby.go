@@ -43,6 +43,11 @@ const (
 	offerPromptTimeout = 60 * time.Second
 	offerDialTimeout   = 75 * time.Second
 
+	// A source whose offer expired unanswered is refused (busy) for this
+	// long: without it one peer could monopolize the single pending-offer
+	// slot back-to-back, silently blocking everyone else's offers.
+	offerTimeoutBackoff = 2 * time.Minute
+
 	maxOfferWireBytes = 64 * 1024
 	maxOfferFiles     = 1000
 	maxFileNameLen    = 512
@@ -52,6 +57,10 @@ const (
 	// LAN peer from parking thousands of goroutines on the 75s deadline.
 	maxConcurrentOfferConns = 16
 )
+
+// offerPromptWait is the effective prompt timeout; a var so tests can
+// collapse it.
+var offerPromptWait = offerPromptTimeout
 
 type offerRequest struct {
 	SenderName string   `json:"senderName"`
@@ -77,7 +86,10 @@ type NearbyOffer struct {
 	Size       int64    `json:"size"`
 }
 
-func validateOfferRequest(req offerRequest) error {
+// validateOfferRequest bounds-checks an incoming offer and sanitizes its
+// display strings in place (control chars and BiDi marks out of names — they
+// end up in the accept prompt and the log).
+func validateOfferRequest(req *offerRequest) error {
 	if req.SenderName == "" || len(req.SenderName) > maxPeerNameLen {
 		return fmt.Errorf("invalid sender name")
 	}
@@ -92,6 +104,13 @@ func validateOfferRequest(req offerRequest) error {
 	if req.Size < 0 {
 		return fmt.Errorf("invalid size")
 	}
+	req.SenderName = sanitizeDisplayName(req.SenderName)
+	if req.SenderName == "" {
+		req.SenderName = "unknown device"
+	}
+	for i, f := range req.Files {
+		req.Files[i] = sanitizeDisplayName(f)
+	}
 	return nil
 }
 
@@ -104,23 +123,32 @@ type nearbyServer struct {
 	mu        sync.Mutex
 	pendingID string
 	pendingCh chan bool
+	// timedOut maps a source IP to the moment its backoff ends, after that
+	// source let an offer expire unanswered (slot-monopolization guard).
+	timedOut map[string]time.Time
 
 	onOffer  func(NearbyOffer)
-	onAccept func(senderName, code string)
+	onAccept func(offer NearbyOffer, code string)
 }
 
 // startNearbyServer listens for offers on a dynamic port. Callbacks: onOffer
 // surfaces the prompt; onAccept fires after the code handoff and starts the
-// actual receive. The returned fingerprint is announced via discovery so
-// dialers can pin this server's certificate.
-func startNearbyServer(onOffer func(NearbyOffer), onAccept func(senderName, code string)) (srv *nearbyServer, port int, fingerprint string, err error) {
+// actual receive (it receives the full accepted offer so the receive can be
+// checked against what was promised). The returned fingerprint is announced
+// via discovery so dialers can pin this server's certificate.
+func startNearbyServer(onOffer func(NearbyOffer), onAccept func(offer NearbyOffer, code string)) (srv *nearbyServer, port int, fingerprint string, err error) {
 	cert, err := ephemeralCertificate()
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("could not create control-channel certificate: %w", err)
 	}
 	fingerprint = certFingerprint(cert.Certificate[0])
 
-	listener, err := tls.Listen("tcp", ":0", &tls.Config{Certificates: []tls.Certificate{cert}})
+	// Both endpoints are krokodyl on a modern Go runtime, so require TLS 1.3
+	// outright — no downgrade surface (e.g. via GODEBUG) to reason about.
+	listener, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+	})
 	if err != nil {
 		return nil, 0, "", fmt.Errorf("could not open control channel: %w", err)
 	}
@@ -128,6 +156,7 @@ func startNearbyServer(onOffer func(NearbyOffer), onAccept func(senderName, code
 	srv = &nearbyServer{
 		listener: listener,
 		sem:      make(chan struct{}, maxConcurrentOfferConns),
+		timedOut: make(map[string]time.Time),
 		onOffer:  onOffer,
 		onAccept: onAccept,
 	}
@@ -173,16 +202,28 @@ func (s *nearbyServer) handle(conn net.Conn) {
 		logrus.WithError(err).Debug("ignoring malformed nearby offer")
 		return
 	}
-	if err := validateOfferRequest(req); err != nil {
+	if err := validateOfferRequest(&req); err != nil {
 		logrus.WithError(err).Debug("rejecting invalid nearby offer")
 		_ = enc.Encode(offerAnswer{Accepted: false})
 		return
+	}
+
+	senderAddr := ""
+	if host, _, err := net.SplitHostPort(conn.RemoteAddr().String()); err == nil {
+		senderAddr = host
 	}
 
 	offerID := uuid.NewString()
 	ch := make(chan bool, 1)
 
 	s.mu.Lock()
+	if until, backedOff := s.timedOut[senderAddr]; backedOff && time.Now().Before(until) {
+		// This source let a previous offer expire unanswered; refuse for a
+		// while so it cannot monopolize the single pending-offer slot.
+		s.mu.Unlock()
+		_ = enc.Encode(offerAnswer{Accepted: false, Busy: true})
+		return
+	}
 	if s.pendingCh != nil {
 		s.mu.Unlock()
 		_ = enc.Encode(offerAnswer{Accepted: false, Busy: true})
@@ -201,25 +242,28 @@ func (s *nearbyServer) handle(conn net.Conn) {
 		s.mu.Unlock()
 	}()
 
-	senderAddr := ""
-	if host, _, err := net.SplitHostPort(conn.RemoteAddr().String()); err == nil {
-		senderAddr = host
-	}
-	s.onOffer(NearbyOffer{
+	offer := NearbyOffer{
 		ID:         offerID,
 		SenderName: req.SenderName,
 		SenderAddr: senderAddr,
 		Files:      req.Files,
 		Size:       req.Size,
-	})
+	}
+	s.onOffer(offer)
 
 	accepted := false
-	promptTimer := time.NewTimer(offerPromptTimeout)
+	answered := false
+	promptTimer := time.NewTimer(offerPromptWait)
 	select {
 	case accepted = <-ch:
+		answered = true
 	case <-promptTimer.C:
 	}
 	promptTimer.Stop()
+
+	if !answered {
+		s.recordOfferTimeout(senderAddr, time.Now())
+	}
 
 	if err := enc.Encode(offerAnswer{Accepted: accepted}); err != nil {
 		return
@@ -233,7 +277,23 @@ func (s *nearbyServer) handle(conn net.Conn) {
 		logrus.WithError(err).Warn("nearby offer accepted but a valid code never arrived")
 		return
 	}
-	s.onAccept(req.SenderName, code.Code)
+	s.onAccept(offer, code.Code)
+}
+
+// recordOfferTimeout starts the per-source backoff after an offer expired
+// unanswered, pruning stale entries so the map stays small.
+func (s *nearbyServer) recordOfferTimeout(senderAddr string, now time.Time) {
+	if senderAddr == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for addr, until := range s.timedOut {
+		if now.After(until) {
+			delete(s.timedOut, addr)
+		}
+	}
+	s.timedOut[senderAddr] = now.Add(offerTimeoutBackoff)
 }
 
 // respond resolves the pending offer prompt. Unknown ids are no-ops (the
@@ -301,6 +361,7 @@ func sendNearbyOffer(candidates []string, port int, expectedFingerprint string, 
 func offerToAddress(addr string, port int, expectedFingerprint string, req offerRequest, code string) (answer offerAnswer, connected bool, err error) {
 	dialer := &net.Dialer{Timeout: perCandidateDialTimeout}
 	conn, err := tls.DialWithDialer(dialer, "tcp", net.JoinHostPort(addr, fmt.Sprint(port)), &tls.Config{
+		MinVersion: tls.VersionTLS13,
 		// Self-signed ephemeral certs have no CA chain or hostname to
 		// check; identity comes from pinning the certificate announced in
 		// the discovery payload instead.

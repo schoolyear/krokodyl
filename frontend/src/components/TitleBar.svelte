@@ -44,7 +44,7 @@
 
   <div class="controls">
     <ThemeSwitcher />
-    <select class="lang-selector" bind:value={$locale} aria-label="Language">
+    <select class="lang-selector" bind:value={$locale} aria-label={$_('a11y.language')}>
       {#each supportedLocales as l}
         <option value={l}>{l.toUpperCase()}</option>
       {/each}

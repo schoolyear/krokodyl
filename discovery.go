@@ -126,6 +126,9 @@ func decodeIdentity(payload []byte) (discoveryIdentity, error) {
 		// becomes invalid UTF-8 when re-encoded to the frontend.
 		id.Name = strings.ToValidUTF8(id.Name[:maxPeerNameLen], "")
 	}
+	// Control chars would let a hostile announce forge log lines; BiDi marks
+	// could visually reorder UI text built around the name.
+	id.Name = sanitizeDisplayName(id.Name)
 	if id.Name == "" {
 		id.Name = "unknown device"
 	}

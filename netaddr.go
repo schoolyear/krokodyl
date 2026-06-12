@@ -89,6 +89,8 @@ func orderedCandidates(advertised []string, packetSource string) []string {
 	}
 
 	seen := make(map[string]bool, len(ranked))
+	// In-place filter: out shares ranked's backing array; safe because the
+	// write index never passes the read index.
 	out := ranked[:0]
 	for _, ip := range ranked {
 		if ip == "" || seen[ip] {

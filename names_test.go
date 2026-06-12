@@ -27,3 +27,28 @@ func TestRandomDeviceNameVaries(t *testing.T) {
 		t.Errorf("expected varied names, got only %d distinct in 50 draws", len(seen))
 	}
 }
+
+func TestSanitizeDisplayName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"plain name unchanged", "Brave Otter", "Brave Otter"},
+		{"unicode kept", "Mädchen 龍", "Mädchen 龍"},
+		{"newline stripped (log forging)", "evil\n2026-01-01 FAKE line", "evil2026-01-01 FAKE line"},
+		{"carriage return stripped", "a\rb", "ab"},
+		{"ANSI escape stripped", "\x1b[31mred\x1b[0m", "[31mred[0m"},
+		{"DEL stripped", "a\x7fb", "ab"},
+		{"RLO stripped (BiDi spoof)", "abc‮xyz", "abcxyz"},
+		{"isolates stripped", "⁦hidden⁩", "hidden"},
+		{"LRM RLM ALM stripped", "a‎b‏c؜d", "abcd"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := sanitizeDisplayName(tt.in); got != tt.want {
+				t.Errorf("sanitizeDisplayName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

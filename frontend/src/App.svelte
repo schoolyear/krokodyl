@@ -1,14 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   // I18n imports
-  import { _ } from 'svelte-i18n';
+  import { _, locale } from 'svelte-i18n';
   import { setupi18n } from './i18n';
   import TitleBar from './components/TitleBar.svelte';
   import { theme } from './stores/theme';
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -26,6 +26,7 @@
     error?: string;
     resendable?: boolean;
     peerMachineId?: string;
+    resumeCode?: string;
   }
 
   interface NearbyOffer {
@@ -37,6 +38,7 @@
   }
 
   interface OverwritePrompt {
+    promptId: string;
     transferId: string;
     fileName: string;
     oldSize: number;
@@ -45,10 +47,18 @@
     newModTime: string;
   }
 
+  interface VerifyPrompt {
+    promptId: string;
+    transferId: string;
+    detail: string;
+  }
+
   interface NearbyPeer {
     id: string;
     name: string;
     addr: string;
+    addrs?: string[];
+    port?: number;
     machineId?: string;
   }
 
@@ -82,6 +92,12 @@
   let toastType: 'success' | 'error' | 'info' = $state('info');
   let toastTimeout: number;
   let overwritePrompt: OverwritePrompt | null = $state(null);
+  // A finished nearby receive whose content differs from the accepted offer.
+  let verifyPrompt: VerifyPrompt | null = $state(null);
+  // A peer resend awaiting the user's check of the target name + address.
+  let resendConfirm: { id: string; name: string; addr: string } | null = $state(null);
+  // Marks the code input invalid after a failed receive attempt (3.3.1).
+  let receiveInvalid = $state(false);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -94,6 +110,12 @@
     await setupi18n();
     isReady = true;
   })();
+
+  // Keep the document language in sync with the chosen locale so screen
+  // readers switch TTS voice and pronunciation rules (WCAG 3.1.1).
+  $effect(() => {
+    if ($locale) document.documentElement.lang = $locale.split('-')[0];
+  });
 
   onMount(() => {
     theme.init();
@@ -117,7 +139,7 @@
     init();
 
     // We must ensure 'isReady' is true before calling any functions that use translations
-    const unsubscribe = _.subscribe(async (t: any) => {
+    const unsubscribe = _.subscribe(async (t: unknown) => {
       if (typeof t !== 'function' || !isReady) return;
       await loadTransfers();
     });
@@ -125,8 +147,9 @@
     EventsOn('transfer:updated', (transfer: FileTransfer) => {
       const index = transfers.findIndex(t => t.id === transfer.id);
       if (index !== -1) {
+        // $state arrays are deep proxies in Svelte 5: index assignment is
+        // reactive on its own, no reassignment needed.
         transfers[index] = transfer;
-        transfers = [...transfers];
       } else {
         transfers = [transfer, ...transfers];
       }
@@ -148,6 +171,10 @@
 
     EventsOn('transfer:overwrite', (prompt: OverwritePrompt) => {
       overwritePrompt = prompt;
+    });
+
+    EventsOn('transfer:verify', (prompt: VerifyPrompt) => {
+      verifyPrompt = prompt;
     });
 
     EventsOn('nearby:updated', (peers: NearbyPeer[]) => {
@@ -200,7 +227,13 @@
   });
 
   async function loadTransfers() {
-    transfers = await GetTransfers();
+    try {
+      transfers = await GetTransfers();
+    } catch (error) {
+      // Startup race: the Wails bridge may not be ready yet; the
+      // transfer:updated events repopulate the list as they arrive.
+      console.error('Could not load transfers', error);
+    }
   }
 
   async function browseAndSendFiles() {
@@ -234,9 +267,11 @@
 
   async function receiveFile() {
     if (isReceiving || !receiveCode.trim() || !destinationPath.trim()) {
+      receiveInvalid = !receiveCode.trim();
       showToast($_('toasts.missing_info'), 'error');
       return;
     }
+    receiveInvalid = false;
 
     try {
       showToast($_('toasts.download_started'), 'info');
@@ -285,8 +320,8 @@
   function formatFileSize(bytes: number): string {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 
@@ -323,10 +358,12 @@
   }
 
   async function handleOverwriteResponse(response: 'yes' | 'no') {
-    if (overwritePrompt) {
-      await RespondToOverwrite(overwritePrompt.transferId, response);
-      overwritePrompt = null;
-    }
+    if (!overwritePrompt) return;
+    // Clear the prompt before awaiting so a double-click or Enter+Escape
+    // can't send a second answer; the backend also ignores stale prompt ids.
+    const promptId = overwritePrompt.promptId;
+    overwritePrompt = null;
+    await RespondToOverwrite(promptId, response);
   }
 
   async function sendToNearbyPeer(peer: NearbyPeer) {
@@ -334,12 +371,16 @@
     try {
       const filePaths = await SelectFiles();
       if (filePaths && filePaths.length > 0) {
+        // Same gating as browseAndSendFiles: raised here, cleared by the
+        // transfer:updated handler when the transfer goes terminal.
+        isSending = true;
         await SendToPeer(peer.id, filePaths);
         lastPeerName = peer.name;
       }
     } catch (error) {
       console.error('Error sending to peer:', error);
       showToast($_('toasts.select_file_failed'), 'error');
+      isSending = false;
     }
   }
 
@@ -349,17 +390,49 @@
     resendNotes = rest;
     try {
       const outcome = await ResendTransfer(id);
-      if (outcome?.message) {
-        showToast(outcome.message, outcome.started ? 'success' : 'error');
-        if (!outcome.started) {
-          resendNotes = { ...resendNotes, [id]: outcome.message };
-        }
+      if (outcome?.needsConfirm) {
+        // Device identity on the LAN is unauthenticated — the user verifies
+        // the target's name and address before any files are offered.
+        resendConfirm = { id, name: outcome.peerName ?? '', addr: outcome.peerAddr ?? '' };
+        return;
       }
+      handleResendOutcome(id, outcome);
     } catch (error) {
       const message = String(error);
       showToast(message, 'error');
       resendNotes = { ...resendNotes, [id]: message };
     }
+  }
+
+  function handleResendOutcome(id: string, outcome: { started: boolean; message?: string } | null) {
+    if (outcome?.message) {
+      showToast(outcome.message, outcome.started ? 'success' : 'error');
+      if (!outcome.started) {
+        resendNotes = { ...resendNotes, [id]: outcome.message };
+      }
+    }
+  }
+
+  async function handleResendConfirm(confirmed: boolean) {
+    if (!resendConfirm) return;
+    const id = resendConfirm.id;
+    resendConfirm = null;
+    if (!confirmed) return;
+    try {
+      handleResendOutcome(id, await ConfirmResend(id));
+    } catch (error) {
+      const message = String(error);
+      showToast(message, 'error');
+      resendNotes = { ...resendNotes, [id]: message };
+    }
+  }
+
+  async function handleVerifyResponse(keep: boolean) {
+    if (!verifyPrompt) return;
+    const promptId = verifyPrompt.promptId;
+    verifyPrompt = null;
+    // Shares the overwrite-response plumbing; stale ids are ignored.
+    await RespondToOverwrite(promptId, keep ? 'yes' : 'no');
   }
 
   async function confirmClearHistory() {
@@ -446,7 +519,7 @@
 
     <main class="scroll-area">
     <section class="surface">
-      <div class="segmented" role="tablist" aria-label="Send or receive">
+      <div class="segmented" role="tablist" aria-label={$_('a11y.tabs')}>
         <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} tabindex={activeTab === 'send' ? 0 : -1} onclick={() => activeTab = 'send'} onkeydown={handleTabKeydown}>
           📤 {$_('tabs.send')}
         </button>
@@ -460,7 +533,7 @@
           {#if waitingSend?.code}
             <div class="code-spotlight">
               <p class="code-label">{$_('send.share_code')}</p>
-              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} aria-label={`Copy transfer code ${waitingSend?.code ?? ''}`} title={$_('transfer.copy_prompt')}>
+              <button class="code-chip" onclick={() => waitingSend?.code && copyToClipboard(waitingSend.code)} aria-label={$_('a11y.copy_code', { values: { code: waitingSend?.code ?? '' } })} title={$_('transfer.copy_prompt')}>
                 <span class="code-value">{waitingSend.code}</span>
                 <span class="code-copy">⧉</span>
               </button>
@@ -486,17 +559,19 @@
             {:else if nearbyPeers.length === 0}
               <p class="nearby-state">{$_('nearby.empty')}</p>
             {:else}
-              <div class="peer-chips">
+              <ul class="peer-chips">
                 {#each sortedPeers as peer (peer.id)}
-                  <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={`Send to ${peer.name}`} title={peer.addr}>
-                    <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
-                    <span class="peer-name">{peer.name}</span>
-                    {#if peer.name === lastPeerName}
-                      <span class="peer-recent">{$_('nearby.recent')}</span>
-                    {/if}
-                  </button>
+                  <li>
+                    <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={$_('a11y.send_to', { values: { name: peer.name } })} title={peer.addr}>
+                      <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
+                      <span class="peer-name">{peer.name}</span>
+                      {#if peer.name === lastPeerName}
+                        <span class="peer-recent">{$_('nearby.recent')}</span>
+                      {/if}
+                    </button>
+                  </li>
                 {/each}
-              </div>
+              </ul>
             {/if}
           </div>
 
@@ -507,10 +582,10 @@
             ondragleave={() => isDragOver = false}
             ondrop={() => isDragOver = false}
             role="region"
-            aria-label={$_('send.drop_hint')}
+            aria-labelledby="drop-hint-text"
           >
             <div class="drop-glyph" aria-hidden="true">📂</div>
-            <p class="drop-hint">{$_('send.drop_hint')}</p>
+            <p class="drop-hint" id="drop-hint-text">{$_('send.drop_hint')}</p>
             <p class="drop-or">{$_('send.drop_or')}</p>
             <button class="btn primary" onclick={browseAndSendFiles} disabled={isSending}>
               {#if isSending}
@@ -527,8 +602,8 @@
           <h2>{$_('receive.title')}</h2>
           <p class="panel-description">{$_('receive.description')}</p>
           <div class="input-group">
-            <input class="code-input" type="text" bind:value={receiveCode} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" spellcheck="false" autocomplete="off" />
-            <span id="code-input-hint" class="sr-only">Pasting a valid code, or pressing Enter, starts the transfer.</span>
+            <input class="code-input" type="text" bind:value={receiveCode} oninput={() => receiveInvalid = false} onpaste={handleCodePaste} onkeydown={handleCodeKeydown} placeholder={$_('receive.placeholder_code')} aria-label={$_('receive.placeholder_code')} aria-describedby="code-input-hint" aria-invalid={receiveInvalid} spellcheck="false" autocomplete="off" />
+            <span id="code-input-hint" class="sr-only">{$_('a11y.code_hint')}</span>
           </div>
           <div class="input-group destination-group">
             <input type="text" bind:value={destinationPath} placeholder={$_('receive.placeholder_destination')} aria-label={$_('receive.placeholder_destination')} readonly />
@@ -561,10 +636,10 @@
           <p>{$_('history.empty_state')}</p>
         </div>
       {:else}
-        <div class="transfer-list">
+        <ul class="transfer-list">
           {#each transfers as transfer (transfer.id)}
             {@const statusInfo = getStatusInfo(transfer.status)}
-            <div class="transfer-item" style="--status-color: {statusInfo.color}">
+            <li class="transfer-item" style="--status-color: {statusInfo.color}">
               <div class="status-icon" aria-hidden="true">{statusInfo.icon}</div>
               <div class="transfer-details">
                 <div class="filename">
@@ -586,14 +661,14 @@
                 <div class="file-meta">
                   <span>{formatFileSize(transfer.size)}</span>
                   {#if transfer.code && transfer.status === 'waiting'}
-                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} aria-label={`Copy transfer code ${transfer.code}`} title={$_('transfer.copy_prompt')}>
+                    <button class="code" onclick={() => {if (transfer.code) copyToClipboard(transfer.code)}} aria-label={$_('a11y.copy_code', { values: { code: transfer.code } })} title={$_('transfer.copy_prompt')}>
                       {transfer.code}
                     </button>
                   {/if}
                 </div>
               </div>
               <div class="transfer-status">
-                <div class="status-text" aria-live="polite">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
+                <div class="status-text" role="status" aria-live="polite">{$_(`status.${transfer.status}`, { default: transfer.status })}</div>
                 <div class="progress-bar" aria-hidden="true">
                   <div class="progress-fill" style="width: {transfer.progress}%"></div>
                 </div>
@@ -612,9 +687,9 @@
                   </button>
                 {/if}
               </div>
-            </div>
+            </li>
           {/each}
-        </div>
+        </ul>
       {/if}
     </section>
 
@@ -708,6 +783,33 @@
   </div>
 {/if}
 
+{#if verifyPrompt}
+  <div class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="verify-modal-title" use:modalDialog={() => handleVerifyResponse(false)}>
+      <h2 id="verify-modal-title">{$_('verify.title')}</h2>
+      <p>{$_('verify.prompt')}</p>
+      <p class="verify-detail">{verifyPrompt.detail}</p>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => handleVerifyResponse(false)}>{$_('verify.discard')}</button>
+        <button class="btn danger" onclick={() => handleVerifyResponse(true)}>{$_('verify.keep')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if resendConfirm}
+  <div class="modal-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="resend-modal-title" use:modalDialog={() => handleResendConfirm(false)}>
+      <h2 id="resend-modal-title">{$_('resend.title')}</h2>
+      <p>{$_('resend.prompt', { values: { name: resendConfirm.name, addr: resendConfirm.addr }})}</p>
+      <div class="modal-actions">
+        <button class="btn" onclick={() => handleResendConfirm(false)}>{$_('resend.cancel')}</button>
+        <button class="btn primary" onclick={() => handleResendConfirm(true)}>{$_('resend.confirm')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   /* App shell: a fixed-height column so the window chrome strip stays put
      and only the content area scrolls — the page scrollbar never runs
@@ -773,7 +875,7 @@
 
   .segment.active {
     background-color: var(--color-bg-light);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     box-shadow: var(--shadow-1);
   }
 
@@ -817,6 +919,11 @@
   }
 
   .visibility-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    min-height: 1.5rem;
     background: none;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -839,7 +946,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     background-color: var(--color-primary-soft);
     padding: 0.1rem 0.375rem;
     border-radius: 999px;
@@ -859,6 +966,15 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+    /* Semantic list, visual chips. */
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .peer-chips li {
+    display: inline-flex;
+    max-width: 100%;
   }
 
   .peer-chip {
@@ -895,7 +1011,7 @@
     height: 1.5rem;
     border-radius: 50%;
     background-color: var(--color-primary-soft);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     font-weight: 800;
     font-size: 0.8rem;
     flex-shrink: 0;
@@ -973,7 +1089,7 @@
     border: none;
     border-radius: var(--border-radius);
     background-color: var(--color-bg);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     font-family: var(--font-family-mono);
     font-size: clamp(0.95rem, 2.8vw, 1.15rem);
     font-weight: 700;
@@ -1021,7 +1137,8 @@
   }
 
   .input-group input:focus {
-    outline: none;
+    /* No outline:none — the global :focus-visible ring must survive for
+       keyboard users (WCAG 2.4.7); pointer focus shows border+glow only. */
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px var(--color-primary-soft);
   }
@@ -1125,6 +1242,7 @@
   }
 
   .history-clear {
+    min-height: 1.5rem;
     background: none;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -1142,7 +1260,8 @@
   }
 
   .btn.danger {
-    background-color: var(--color-red);
+    /* Darker red than --color-red: white label clears AA in both themes. */
+    background-color: var(--color-danger-strong);
     color: #fff;
   }
 
@@ -1150,7 +1269,7 @@
     font-weight: 600;
     text-transform: none;
     letter-spacing: 0;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
   }
 
   .empty-state {
@@ -1178,6 +1297,10 @@
     gap: 0.625rem;
     max-height: 420px;
     overflow-y: auto;
+    /* Semantic list, visual cards. */
+    list-style: none;
+    margin: 0;
+    padding: 0;
   }
 
   .transfer-item {
@@ -1236,7 +1359,7 @@
   .peer-label {
     font-size: clamp(0.7rem, 2vw, 0.8rem);
     font-weight: 600;
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     margin-left: 0.375rem;
   }
 
@@ -1290,7 +1413,7 @@
     border: none;
     padding: 0.2rem 0.5rem;
     border-radius: var(--radius-sm);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     cursor: pointer;
     word-break: break-all;
     font-size: clamp(0.7rem, 2vw, 0.8rem);
@@ -1345,7 +1468,7 @@
     font-size: clamp(0.72rem, 2vw, 0.82rem);
     font-weight: 700;
     background-color: var(--color-primary-soft);
-    color: var(--color-primary);
+    color: var(--color-accent-text);
     border: 1px solid var(--color-primary);
   }
 
@@ -1370,7 +1493,8 @@
     bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
-    background-color: var(--color-primary);
+    /* Strong tokens: white toast text clears AA in both themes. */
+    background-color: var(--color-primary-strong);
     color: white;
     padding: 0.875rem 1.5rem;
     border-radius: var(--border-radius);
@@ -1383,11 +1507,11 @@
   }
 
   .toast.success {
-    background-color: var(--color-green);
+    background-color: var(--color-primary-strong);
   }
 
   .toast.error {
-    background-color: var(--color-red);
+    background-color: var(--color-danger-strong);
   }
 
   @keyframes fade-in-out {
@@ -1449,6 +1573,16 @@
 
   .file-diff div:not(:last-child) {
     margin-bottom: 0.5rem;
+  }
+
+  .verify-detail {
+    font-family: var(--font-family-mono);
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+    background-color: var(--color-bg);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.625rem;
+    word-break: break-word;
   }
 
   .modal-actions {

@@ -17,6 +17,10 @@
      The lighter --color-primary stays for accents/text on dark surfaces. */
   --color-primary-strong: #0E8050;
   --color-primary-strong-hover: #0B6B43;
+  /* Green used AS TEXT on this theme's surfaces (AA 4.5:1). */
+  --color-accent-text: #2FBF8F;
+  /* Red used behind white text (AA: --color-red here is too light). */
+  --color-danger-strong: #C0392B;
   --color-green: #34D399;
   --color-yellow: #FBBF24;
   --color-red: #F87171;
@@ -41,12 +45,16 @@
   --color-bg-lighter: #EBEDE6;
   --color-border: #D5DACE;
   --color-text: #1A241E;
-  --color-text-dim: #5F6F65;
+  /* Dark enough for AA on every light surface incl. --color-bg-lighter. */
+  --color-text-dim: #4E5E55;
   --color-primary: #0E9F6E;
   --color-primary-hover: #0B8056;
   --color-primary-soft: rgba(14, 159, 110, 0.1);
   --color-primary-strong: #0E8050;
   --color-primary-strong-hover: #0B6B43;
+  /* Light surfaces need the darker green for AA-passing green text. */
+  --color-accent-text: #0E8050;
+  --color-danger-strong: #DC2626;
   --color-green: #059669;
   /* Darker amber: passes 4.5:1 as text on the white light-theme surface. */
   --color-yellow: #B45309;
@@ -108,6 +116,13 @@ body {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+/* Browser default placeholders render at ~54% opacity and fail AA on light
+   surfaces; pin them to the dim text token at full opacity (WCAG 1.4.3). */
+input::placeholder {
+  color: var(--color-text-dim);
+  opacity: 1;
 }
 
 /* Slim, rounded scrollbars everywhere (WebView2/WKWebView are both

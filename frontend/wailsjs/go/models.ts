@@ -77,6 +77,9 @@ export namespace main {
 	export class ResendOutcome {
 	    started: boolean;
 	    message: string;
+	    needsConfirm?: boolean;
+	    peerName?: string;
+	    peerAddr?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ResendOutcome(source);
@@ -86,6 +89,9 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.started = source["started"];
 	        this.message = source["message"];
+	        this.needsConfirm = source["needsConfirm"];
+	        this.peerName = source["peerName"];
+	        this.peerAddr = source["peerAddr"];
 	    }
 	}
 

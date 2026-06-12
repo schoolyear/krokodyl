@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from 'svelte-i18n';
   import { theme } from '../stores/theme';
 
   function toggleTheme() {
@@ -9,8 +10,8 @@
 <button
   onclick={toggleTheme}
   class="theme-toggle"
-  aria-label={$theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
-  title={$theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme'}
+  aria-label={$theme === 'light' ? $_('a11y.theme_dark') : $_('a11y.theme_light')}
+  title={$theme === 'light' ? $_('a11y.theme_dark') : $_('a11y.theme_light')}
 >
   {#if $theme === 'light'}
     <span aria-hidden="true">☀️</span>

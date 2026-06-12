@@ -74,3 +74,20 @@ func TestStallTrackerSlowButMovingNeverTrips(t *testing.T) {
 		}
 	}
 }
+
+func TestStallTrackerIsArmed(t *testing.T) {
+	var s stallTracker
+	base := time.Now()
+
+	if s.isArmed() {
+		t.Error("fresh tracker must not be armed")
+	}
+	s.observe(0, 0, false, base)
+	if s.isArmed() {
+		t.Error("inactive samples must not arm the tracker")
+	}
+	s.observe(1, 0, true, base)
+	if !s.isArmed() {
+		t.Error("first active sample must arm the tracker")
+	}
+}

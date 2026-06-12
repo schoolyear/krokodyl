@@ -6,6 +6,8 @@ export function CancelTransfer(arg1:string):Promise<void>;
 
 export function ClearHistory():Promise<void>;
 
+export function ConfirmResend(arg1:string):Promise<main.ResendOutcome>;
+
 export function GetBuildStamp():Promise<string>;
 
 export function GetDefaultDownloadPath():Promise<string>;

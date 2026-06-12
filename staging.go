@@ -82,11 +82,51 @@ func validateRelPath(rel string) error {
 		strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("received file has an unsafe path: %q", rel)
 	}
-	// Colons enable drive-letter and NTFS alternate-data-stream tricks.
-	if runtime.GOOS == "windows" && strings.Contains(clean, ":") {
-		return fmt.Errorf("received file has an unsafe path: %q", rel)
+	if runtime.GOOS == "windows" {
+		// Colons enable drive-letter and NTFS alternate-data-stream tricks.
+		if strings.Contains(clean, ":") {
+			return fmt.Errorf("received file has an unsafe path: %q", rel)
+		}
+		for _, seg := range strings.Split(clean, string(filepath.Separator)) {
+			if unsafeWindowsSegment(seg) {
+				return fmt.Errorf("received file has an unsafe path: %q", rel)
+			}
+		}
 	}
 	return nil
+}
+
+// windowsReservedNames are device names Win32 reserves in every directory;
+// creating them opens the device instead of a file (NUL silently swallows
+// data, CON blocks). The reservation applies to the name with any extension
+// stripped ("nul.txt" is still NUL).
+var windowsReservedNames = map[string]bool{
+	"con": true, "prn": true, "aux": true, "nul": true,
+	"com1": true, "com2": true, "com3": true, "com4": true, "com5": true,
+	"com6": true, "com7": true, "com8": true, "com9": true,
+	"lpt1": true, "lpt2": true, "lpt3": true, "lpt4": true, "lpt5": true,
+	"lpt6": true, "lpt7": true, "lpt8": true, "lpt9": true,
+}
+
+// unsafeWindowsSegment reports whether one path segment is dangerous on
+// Windows: a reserved device name, or a name with trailing dots/spaces
+// (Win32 silently strips those, so the file created would not be the path
+// that was validated). Pure so it is testable on every platform.
+func unsafeWindowsSegment(seg string) bool {
+	if seg == "" {
+		return false
+	}
+	if strings.HasSuffix(seg, ".") || strings.HasSuffix(seg, " ") {
+		return true
+	}
+	base := seg
+	if i := strings.IndexByte(base, '.'); i >= 0 {
+		base = base[:i]
+	}
+	// Win32 strips only TRAILING dots/spaces from the stem when matching
+	// device names ("con .txt" is CON, " con.txt" is not), so trim right only
+	// — trimming leading spaces would reject legitimate names.
+	return windowsReservedNames[strings.ToLower(strings.TrimRight(base, " ."))]
 }
 
 // renameFunc is injected so tests can simulate cross-device rename failures.
@@ -130,6 +170,9 @@ func moveStagedFile(stagingDir, destDir, relPath string, rename renameFunc) erro
 	return nil
 }
 
+// copyFile copies via a temp file in the destination directory and renames
+// into place, so a crash mid-copy can never leave a truncated file that looks
+// complete at dst (and an existing dst survives until the copy is whole).
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -137,20 +180,29 @@ func copyFile(src, dst string) error {
 	}
 	defer in.Close()
 
-	out, err := os.Create(dst)
+	tmp := dst + ".krokodyl-tmp"
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return err
 	}
 
 	if _, err := io.Copy(out, in); err != nil {
 		out.Close()
-		os.Remove(dst)
+		os.Remove(tmp)
 		return err
 	}
 	if err := out.Sync(); err != nil {
 		out.Close()
-		os.Remove(dst)
+		os.Remove(tmp)
 		return err
 	}
-	return out.Close()
+	if err := out.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
