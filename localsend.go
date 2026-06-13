@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -81,6 +83,7 @@ type localSendReceiver struct {
 	srv  *http.Server
 	dest string
 	self lsDeviceInfo
+	port int // actual bound TLS port (exposed for tests)
 
 	// onOffer asks the user to accept an incoming send (alias, sender IP, file
 	// names, total size); blocks until answered. Reuses the nearby prompt.
@@ -94,9 +97,8 @@ type localSendReceiver struct {
 	// device can't spam prompts / pile up blocked goroutines.
 	offerBusy atomic.Bool
 	// registerSem bounds concurrent register-back POSTs against a multicast
-	// flood; client is reused to avoid per-call transport/port churn.
+	// flood (each uses a per-peer pinned TLS client, so no shared client).
 	registerSem chan struct{}
-	client      *http.Client
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -110,38 +112,47 @@ func randomFingerprint() string {
 	return hex.EncodeToString(b)
 }
 
-// newLocalSendReceiver binds the LocalSend port and starts the HTTP API +
-// multicast announce/listen. A bind failure (e.g. another LocalSend instance)
-// is non-fatal: it returns an error the caller logs, and the rest of receiving
-// (the QR web upload) still works.
-func newLocalSendReceiver(dest, alias string, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*localSendReceiver, error) {
+// newLocalSendReceiver binds the LocalSend port over TLS and starts the HTTPS
+// API + multicast announce/listen. We announce protocol "https" with the
+// SHA-256 fingerprint of our self-signed cert; peers pin that fingerprint
+// (LocalSend's trust model — same as krokodyl's own nearby channel). A bind
+// failure is non-fatal: the caller logs it and the QR web upload still works.
+func newLocalSendReceiver(dest, alias string, port int, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*localSendReceiver, error) {
 	if onOffer == nil {
 		onOffer = func(string, string, []string, int64) bool { return false }
 	}
 	if onFile == nil {
 		onFile = func(string, int64) {}
 	}
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", localSendPort))
+	cert, err := ephemeralCertificate()
 	if err != nil {
-		return nil, fmt.Errorf("localsend port %d unavailable: %w", localSendPort, err)
+		return nil, fmt.Errorf("localsend: certificate: %w", err)
 	}
+	ln, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("localsend port %d unavailable: %w", port, err)
+	}
+	bound := ln.Addr().(*net.TCPAddr).Port
 
 	r := &localSendReceiver{
 		dest: dest,
+		port: bound,
 		self: lsDeviceInfo{
 			Alias:       alias,
 			Version:     localSendVersion,
 			DeviceType:  "desktop",
-			Fingerprint: randomFingerprint(),
-			Port:        localSendPort,
-			Protocol:    "http",
+			Fingerprint: certFingerprint(cert.Certificate[0]),
+			Port:        bound,
+			Protocol:    "https",
 			Download:    false,
 		},
 		onOffer:     onOffer,
 		onFile:      onFile,
 		sessions:    make(map[string]*lsSession),
 		registerSem: make(chan struct{}, 8),
-		client:      &http.Client{Timeout: 4 * time.Second},
 		stopCh:      make(chan struct{}),
 	}
 
@@ -389,10 +400,10 @@ func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {
 		// unbounded goroutines / outbound POSTs; drop when saturated.
 		select {
 		case r.registerSem <- struct{}{}:
-			go func(host string, port int) {
+			go func(host string, port int, fp string) {
 				defer func() { <-r.registerSem }()
-				r.registerWith(host, port)
-			}(src.IP.String(), info.Port)
+				r.registerWith(host, port, fp)
+			}(src.IP.String(), info.Port, info.Fingerprint)
 		default:
 		}
 	}
@@ -406,7 +417,7 @@ func (a *App) startLocalSend(dest string) {
 	if alias == "" {
 		alias = "krokodyl"
 	}
-	ls, err := newLocalSendReceiver(dest, alias, a.localSendOffer, func(name string, size int64) {
+	ls, err := newLocalSendReceiver(dest, alias, localSendPort, a.localSendOffer, func(name string, size int64) {
 		a.tm.add(FileTransfer{
 			ID:       "receive-ls-" + uuid.NewString(),
 			Name:     name,
@@ -470,11 +481,11 @@ func (a *App) resolveLocalSendOffer(offerID string, accept bool) {
 	}
 }
 
-// registerWith tells a freshly-discovered peer about us over HTTP. The target
-// is restricted to a private-LAN address so a spoofed announcement can't turn
-// register-back into an arbitrary-host port probe (SSRF) — LocalSend lives on
-// the local network.
-func (r *localSendReceiver) registerWith(host string, port int) {
+// registerWith tells a freshly-discovered peer about us over HTTPS, pinning the
+// peer's announced certificate fingerprint. The target is restricted to a
+// private-LAN address so a spoofed announcement can't turn register-back into
+// an arbitrary-host probe (SSRF) — LocalSend lives on the local network.
+func (r *localSendReceiver) registerWith(host string, port int, fingerprint string) {
 	if port <= 0 || port > 65535 {
 		return
 	}
@@ -485,10 +496,40 @@ func (r *localSendReceiver) registerWith(host string, port int) {
 	body := r.self
 	body.Announce = false
 	data, _ := json.Marshal(body)
-	url := "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/api/localsend/v2/register"
-	resp, err := r.client.Post(url, "application/json", bytes.NewReader(data))
+
+	// Per-peer pinned client (fingerprints differ per peer, so no shared one);
+	// bounded by registerSem at the call site.
+	client := &http.Client{
+		Timeout: 4 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion:            tls.VersionTLS12,
+			InsecureSkipVerify:    true, //nolint:gosec // self-signed; pinned below
+			VerifyPeerCertificate: pinFingerprint(fingerprint),
+		}},
+	}
+	url := "https://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/api/localsend/v2/register"
+	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return
 	}
 	resp.Body.Close()
+}
+
+// pinFingerprint verifies a presented self-signed cert against the SHA-256
+// fingerprint the peer announced (LocalSend's identity check). An empty
+// expected fingerprint (older/unknown peer) skips pinning rather than fail
+// discovery.
+func pinFingerprint(expected string) func([][]byte, [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if expected == "" {
+			return nil
+		}
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("peer presented no certificate")
+		}
+		if subtle.ConstantTimeCompare([]byte(certFingerprint(rawCerts[0])), []byte(expected)) != 1 {
+			return fmt.Errorf("peer certificate does not match announced fingerprint")
+		}
+		return nil
+	}
 }
