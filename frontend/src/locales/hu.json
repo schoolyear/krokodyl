@@ -113,5 +113,41 @@
     "prompt": "Ugyanezeket a fájlokat küldöd ide: {name} ({addr})?",
     "confirm": "Küldés",
     "cancel": "Mégse"
+  },
+  "offline": {
+    "title": "Nincs kozos halozat?",
+    "subtitle": "Hozz letre kozvetlen kapcsolatot a ket eszkoz kozott — internet nelkul.",
+    "cta": "Nincs halozat? Kozvetlen kapcsolat",
+    "ble_unavailable": "Az automatikus Bluetooth-parositas nincs engedelyezve ebben a valtozatban — kovesd az alabbi kezi lepeseket.",
+    "ble_available": "A Bluetooth-parositas elerheto ezen az eszkozon.",
+    "ssid_label": "Halozat neve",
+    "psk_label": "Jelszo",
+    "host_label": "Ezen az eszkozon — kapcsolat gazdaja",
+    "join_label": "A masik eszkozon — csatlakozas",
+    "close": "Bezaras",
+    "manual": {
+      "generic": "Csatlakoztasd mindket eszkozt ugyanahhoz a Wi-Fi-hez vagy hotspothoz; ezutan automatikusan megtalaljak egymast.",
+      "windows": {
+        "host_1": "Nyisd meg: Beallitasok → Halozat es internet → Mobil hotspot, es kapcsold be.",
+        "host_2": "Allitsd be a fenti halozatnevet es jelszot (vagy jegyezd fel, amit a Windows mutat).",
+        "host_3": "A masik eszkozon csatlakozz ahhoz a Wi-Fi-halozathoz — a krokodyl automatikusan megtalalja.",
+        "join_1": "Nyisd meg a Wi-Fi menut, es csatlakozz a fenti gazdahalozat nevehez.",
+        "join_2": "Add meg a fenti jelszot; a krokodyl eszleli a masik eszkozt."
+      },
+      "linux": {
+        "host_1": "Nyisd meg a halozati beallitasokat es engedelyezz egy Wi-Fi hotspotot (vagy futtasd: nmcli device wifi hotspot).",
+        "host_2": "Hasznald a fenti halozatnevet es jelszot.",
+        "host_3": "A masik eszkozon csatlakozz ahhoz a halozathoz — a krokodyl automatikusan megtalalja.",
+        "join_1": "Nyisd meg a Wi-Fi menut, es csatlakozz a fenti gazdahalozathoz.",
+        "join_2": "Add meg a fenti jelszot; a krokodyl eszleli a masik eszkozt."
+      },
+      "darwin": {
+        "host_1": "Nyisd meg: Rendszerbeallitasok → Altalanos → Megosztas → Internetmegosztas.",
+        "host_2": "Oszd meg Wi-Fin, allitsd be a fenti halozatnevet es jelszot, majd kapcsold be az Internetmegosztast.",
+        "host_3": "A masik eszkozon csatlakozz ahhoz a halozathoz — a krokodyl automatikusan megtalalja.",
+        "join_1": "Nyisd meg a Wi-Fi menut, es csatlakozz a fenti gazdahalozathoz.",
+        "join_2": "Add meg a fenti jelszot; a krokodyl eszleli a masik eszkozt."
+      }
+    }
   }
 }

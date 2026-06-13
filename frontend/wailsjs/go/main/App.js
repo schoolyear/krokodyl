@@ -34,6 +34,10 @@ export function GetNearbyPrefs() {
   return window['go']['main']['App']['GetNearbyPrefs']();
 }
 
+export function GetOfflineGuidance() {
+  return window['go']['main']['App']['GetOfflineGuidance']();
+}
+
 export function GetTransfers() {
   return window['go']['main']['App']['GetTransfers']();
 }

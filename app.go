@@ -52,6 +52,11 @@ type App struct {
 	// offer promised — so the finished receive can be checked against it.
 	expectations map[string]*receiveExpectation
 
+	// ble bootstraps offline (no-network) pairing. Defaults to a no-op radio
+	// unless built with -tags krokodyl_ble; Nearby-Direct then falls back to
+	// guided manual hotspot pairing.
+	ble bleRadio
+
 	historyMu sync.Mutex
 
 	nearby          *peerRegistry
@@ -106,6 +111,7 @@ func (a *App) startup(ctx context.Context) {
 	a.overwriteResponses = make(map[string]chan string)
 	a.cancels = make(map[string]chan struct{})
 	a.expectations = make(map[string]*receiveExpectation)
+	a.ble = newBLERadio()
 
 	// Files dropped anywhere on the window start a send immediately.
 	runtime.OnFileDrop(ctx, func(_, _ int, paths []string) {

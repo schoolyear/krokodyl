@@ -74,6 +74,26 @@ export namespace main {
 	        this.lastPeer = source["lastPeer"];
 	    }
 	}
+	export class OfflineGuidance {
+	    bluetoothAvailable: boolean;
+	    ssid: string;
+	    psk: string;
+	    hostSteps: string[];
+	    joinSteps: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new OfflineGuidance(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.bluetoothAvailable = source["bluetoothAvailable"];
+	        this.ssid = source["ssid"];
+	        this.psk = source["psk"];
+	        this.hostSteps = source["hostSteps"];
+	        this.joinSteps = source["joinSteps"];
+	    }
+	}
 	export class ResendOutcome {
 	    started: boolean;
 	    message: string;

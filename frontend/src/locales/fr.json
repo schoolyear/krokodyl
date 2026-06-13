@@ -113,5 +113,41 @@
     "prompt": "Envoyer les mêmes fichiers à {name} ({addr}) ?",
     "confirm": "Envoyer",
     "cancel": "Annuler"
+  },
+  "offline": {
+    "title": "Pas de reseau commun ?",
+    "subtitle": "Creez une connexion directe entre les deux appareils — sans internet.",
+    "cta": "Pas de reseau ? Connexion directe",
+    "ble_unavailable": "L'appairage Bluetooth automatique n'est pas active dans cette version — suivez les etapes manuelles ci-dessous.",
+    "ble_available": "L'appairage Bluetooth est disponible sur cet appareil.",
+    "ssid_label": "Nom du reseau",
+    "psk_label": "Mot de passe",
+    "host_label": "Sur cet appareil — heberger la connexion",
+    "join_label": "Sur l'autre appareil — rejoindre",
+    "close": "Fermer",
+    "manual": {
+      "generic": "Connectez les deux appareils au meme Wi-Fi ou point d'acces ; ils se trouveront alors automatiquement.",
+      "windows": {
+        "host_1": "Ouvrez Parametres → Reseau et Internet → Point d'acces sans fil et activez-le.",
+        "host_2": "Definissez le nom de reseau et le mot de passe indiques ci-dessus (ou notez ceux affiches par Windows).",
+        "host_3": "Sur l'autre appareil, rejoignez ce reseau Wi-Fi — krokodyl le trouvera automatiquement.",
+        "join_1": "Ouvrez le menu Wi-Fi et connectez-vous au nom de reseau de l'hote ci-dessus.",
+        "join_2": "Saisissez le mot de passe ci-dessus ; krokodyl detectera l'autre appareil."
+      },
+      "linux": {
+        "host_1": "Ouvrez vos parametres reseau et activez un point d'acces Wi-Fi (ou lancez : nmcli device wifi hotspot).",
+        "host_2": "Utilisez le nom de reseau et le mot de passe ci-dessus.",
+        "host_3": "Sur l'autre appareil, rejoignez ce reseau — krokodyl le trouvera automatiquement.",
+        "join_1": "Ouvrez le menu Wi-Fi et connectez-vous au reseau de l'hote ci-dessus.",
+        "join_2": "Saisissez le mot de passe ci-dessus ; krokodyl detectera l'autre appareil."
+      },
+      "darwin": {
+        "host_1": "Ouvrez Reglages Systeme → General → Partage → Partage de connexion.",
+        "host_2": "Partagez via le Wi-Fi, definissez le nom de reseau et le mot de passe ci-dessus, puis activez le Partage de connexion.",
+        "host_3": "Sur l'autre appareil, rejoignez ce reseau — krokodyl le trouvera automatiquement.",
+        "join_1": "Ouvrez le menu Wi-Fi et connectez-vous au reseau de l'hote ci-dessus.",
+        "join_2": "Saisissez le mot de passe ci-dessus ; krokodyl detectera l'autre appareil."
+      }
+    }
   }
 }

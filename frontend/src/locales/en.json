@@ -113,5 +113,41 @@
     "prompt": "Send the same files to {name} at {addr}?",
     "confirm": "Send",
     "cancel": "Cancel"
+  },
+  "offline": {
+    "title": "No shared network?",
+    "subtitle": "Make a direct connection between the two devices — no internet needed.",
+    "cta": "No network? Connect directly",
+    "ble_unavailable": "Automatic Bluetooth pairing isn't enabled in this build — follow the manual steps below.",
+    "ble_available": "Bluetooth pairing is available on this device.",
+    "ssid_label": "Network name",
+    "psk_label": "Password",
+    "host_label": "On this device — host the connection",
+    "join_label": "On the other device — join",
+    "close": "Close",
+    "manual": {
+      "generic": "Connect both devices to the same Wi-Fi or hotspot; they will then find each other automatically.",
+      "windows": {
+        "host_1": "Open Settings → Network & internet → Mobile hotspot and turn it on.",
+        "host_2": "Set its network name and password to the ones shown above (or note the ones Windows shows).",
+        "host_3": "On the other device, join that Wi-Fi network — krokodyl will find it automatically.",
+        "join_1": "Open the Wi-Fi menu and connect to the host's network name shown above.",
+        "join_2": "Enter the password above; krokodyl will detect the other device."
+      },
+      "linux": {
+        "host_1": "Open your network settings and enable a Wi-Fi hotspot (or run: nmcli device wifi hotspot).",
+        "host_2": "Use the network name and password shown above.",
+        "host_3": "On the other device, join that network — krokodyl will find it automatically.",
+        "join_1": "Open the Wi-Fi menu and connect to the host's network shown above.",
+        "join_2": "Enter the password above; krokodyl will detect the other device."
+      },
+      "darwin": {
+        "host_1": "Open System Settings → General → Sharing → Internet Sharing.",
+        "host_2": "Share to Wi-Fi, set the network name and password above, then turn Internet Sharing on.",
+        "host_3": "On the other device, join that network — krokodyl will find it automatically.",
+        "join_1": "Open the Wi-Fi menu and connect to the host's network shown above.",
+        "join_2": "Enter the password above; krokodyl will detect the other device."
+      }
+    }
   }
 }

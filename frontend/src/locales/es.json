@@ -113,5 +113,41 @@
     "prompt": "¿Enviar los mismos archivos a {name} en {addr}?",
     "confirm": "Enviar",
     "cancel": "Cancelar"
+  },
+  "offline": {
+    "title": "¿Sin red compartida?",
+    "subtitle": "Crea una conexion directa entre los dos dispositivos — sin internet.",
+    "cta": "¿Sin red? Conectar directamente",
+    "ble_unavailable": "El emparejamiento Bluetooth automatico no esta habilitado en esta version — sigue los pasos manuales de abajo.",
+    "ble_available": "El emparejamiento Bluetooth esta disponible en este dispositivo.",
+    "ssid_label": "Nombre de red",
+    "psk_label": "Contrasena",
+    "host_label": "En este dispositivo — alojar la conexion",
+    "join_label": "En el otro dispositivo — unirse",
+    "close": "Cerrar",
+    "manual": {
+      "generic": "Conecta ambos dispositivos a la misma red Wi-Fi o zona activa; entonces se encontraran automaticamente.",
+      "windows": {
+        "host_1": "Abre Configuracion → Red e Internet → Zona con cobertura inalambrica movil y activala.",
+        "host_2": "Establece el nombre de red y la contrasena indicados arriba (o anota los que muestre Windows).",
+        "host_3": "En el otro dispositivo, unete a esa red Wi-Fi — krokodyl la encontrara automaticamente.",
+        "join_1": "Abre el menu Wi-Fi y conectate al nombre de red del anfitrion indicado arriba.",
+        "join_2": "Introduce la contrasena de arriba; krokodyl detectara el otro dispositivo."
+      },
+      "linux": {
+        "host_1": "Abre la configuracion de red y activa una zona Wi-Fi (o ejecuta: nmcli device wifi hotspot).",
+        "host_2": "Usa el nombre de red y la contrasena indicados arriba.",
+        "host_3": "En el otro dispositivo, unete a esa red — krokodyl la encontrara automaticamente.",
+        "join_1": "Abre el menu Wi-Fi y conectate a la red del anfitrion indicada arriba.",
+        "join_2": "Introduce la contrasena de arriba; krokodyl detectara el otro dispositivo."
+      },
+      "darwin": {
+        "host_1": "Abre Ajustes del Sistema → General → Compartir → Compartir Internet.",
+        "host_2": "Comparte por Wi-Fi, establece el nombre de red y la contrasena de arriba y activa Compartir Internet.",
+        "host_3": "En el otro dispositivo, unete a esa red — krokodyl la encontrara automaticamente.",
+        "join_1": "Abre el menu Wi-Fi y conectate a la red del anfitrion indicada arriba.",
+        "join_2": "Introduce la contrasena de arriba; krokodyl detectara el otro dispositivo."
+      }
+    }
   }
 }

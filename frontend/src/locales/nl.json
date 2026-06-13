@@ -113,5 +113,41 @@
     "prompt": "Dezelfde bestanden versturen naar {name} op {addr}?",
     "confirm": "Versturen",
     "cancel": "Annuleren"
+  },
+  "offline": {
+    "title": "Geen gedeeld netwerk?",
+    "subtitle": "Maak een directe verbinding tussen de twee apparaten — geen internet nodig.",
+    "cta": "Geen netwerk? Verbind direct",
+    "ble_unavailable": "Automatische Bluetooth-koppeling staat niet aan in deze build — volg de handmatige stappen hieronder.",
+    "ble_available": "Bluetooth-koppeling is beschikbaar op dit apparaat.",
+    "ssid_label": "Netwerknaam",
+    "psk_label": "Wachtwoord",
+    "host_label": "Op dit apparaat — host de verbinding",
+    "join_label": "Op het andere apparaat — verbinden",
+    "close": "Sluiten",
+    "manual": {
+      "generic": "Verbind beide apparaten met dezelfde wifi of hotspot; ze vinden elkaar dan automatisch.",
+      "windows": {
+        "host_1": "Open Instellingen → Netwerk en internet → Mobiele hotspot en zet deze aan.",
+        "host_2": "Stel de netwerknaam en het wachtwoord in op de waarden hierboven (of noteer wat Windows toont).",
+        "host_3": "Verbind het andere apparaat met dat wifi-netwerk — krokodyl vindt het automatisch.",
+        "join_1": "Open het wifi-menu en verbind met de netwerknaam van de host hierboven.",
+        "join_2": "Voer het wachtwoord hierboven in; krokodyl detecteert het andere apparaat."
+      },
+      "linux": {
+        "host_1": "Open je netwerkinstellingen en zet een wifi-hotspot aan (of voer uit: nmcli device wifi hotspot).",
+        "host_2": "Gebruik de netwerknaam en het wachtwoord hierboven.",
+        "host_3": "Verbind het andere apparaat met dat netwerk — krokodyl vindt het automatisch.",
+        "join_1": "Open het wifi-menu en verbind met het netwerk van de host hierboven.",
+        "join_2": "Voer het wachtwoord hierboven in; krokodyl detecteert het andere apparaat."
+      },
+      "darwin": {
+        "host_1": "Open Systeeminstellingen → Algemeen → Delen → Internetdeling.",
+        "host_2": "Deel via wifi, stel de netwerknaam en het wachtwoord hierboven in en zet Internetdeling aan.",
+        "host_3": "Verbind het andere apparaat met dat netwerk — krokodyl vindt het automatisch.",
+        "join_1": "Open het wifi-menu en verbind met het netwerk van de host hierboven.",
+        "join_2": "Voer het wachtwoord hierboven in; krokodyl detecteert het andere apparaat."
+      }
+    }
   }
 }

@@ -18,6 +18,8 @@ export function GetNearbyPeers():Promise<Array<main.NearbyPeer>>;
 
 export function GetNearbyPrefs():Promise<main.NearbyPrefs>;
 
+export function GetOfflineGuidance():Promise<main.OfflineGuidance>;
+
 export function GetTransfers():Promise<Array<main.FileTransfer>>;
 
 export function ReceiveFile(arg1:string,arg2:string):Promise<string>;

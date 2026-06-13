@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -98,6 +98,16 @@
   let resendConfirm: { id: string; name: string; addr: string } | null = $state(null);
   // Marks the code input invalid after a failed receive attempt (3.3.1).
   let receiveInvalid = $state(false);
+
+  interface OfflineGuidance {
+    bluetoothAvailable: boolean;
+    ssid: string;
+    psk: string;
+    hostSteps: string[];
+    joinSteps: string[];
+  }
+  // The "no shared network" guidance modal (manual hotspot + credentials).
+  let offlineGuidance: OfflineGuidance | null = $state(null);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -366,6 +376,15 @@
     await RespondToOverwrite(promptId, response);
   }
 
+  async function openOffline() {
+    try {
+      offlineGuidance = await GetOfflineGuidance();
+    } catch (error) {
+      console.error('Could not load offline guidance', error);
+      showToast($_('offline.title'), 'error');
+    }
+  }
+
   async function sendToNearbyPeer(peer: NearbyPeer) {
     if (isSending) return;
     try {
@@ -573,6 +592,9 @@
                 {/each}
               </ul>
             {/if}
+            <button class="offline-cta" onclick={openOffline}>
+              📡 {$_('offline.cta')}
+            </button>
           </div>
 
           <div
@@ -805,6 +827,51 @@
       <div class="modal-actions">
         <button class="btn" onclick={() => handleResendConfirm(false)}>{$_('resend.cancel')}</button>
         <button class="btn primary" onclick={() => handleResendConfirm(true)}>{$_('resend.confirm')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if offlineGuidance}
+  <div class="modal-backdrop">
+    <div class="modal offline-modal" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title" use:modalDialog={() => offlineGuidance = null}>
+      <h2 id="offline-modal-title">{$_('offline.title')}</h2>
+      <p>{$_('offline.subtitle')}</p>
+      <p class="offline-ble-note" role="status">
+        {offlineGuidance.bluetoothAvailable ? $_('offline.ble_available') : $_('offline.ble_unavailable')}
+      </p>
+
+      <div class="offline-creds">
+        <div>
+          <span class="offline-cred-label">{$_('offline.ssid_label')}</span>
+          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.ssid)} aria-label={$_('a11y.copy_code', { values: { code: offlineGuidance.ssid } })} title={$_('transfer.copy_prompt')}>
+            {offlineGuidance.ssid} <span aria-hidden="true">⧉</span>
+          </button>
+        </div>
+        <div>
+          <span class="offline-cred-label">{$_('offline.psk_label')}</span>
+          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.psk)} aria-label={$_('a11y.copy_code', { values: { code: offlineGuidance.psk } })} title={$_('transfer.copy_prompt')}>
+            {offlineGuidance.psk} <span aria-hidden="true">⧉</span>
+          </button>
+        </div>
+      </div>
+
+      <h3 class="offline-steps-title">{$_('offline.host_label')}</h3>
+      <ol class="offline-steps">
+        {#each offlineGuidance.hostSteps as step}
+          <li>{$_(step)}</li>
+        {/each}
+      </ol>
+
+      <h3 class="offline-steps-title">{$_('offline.join_label')}</h3>
+      <ol class="offline-steps">
+        {#each offlineGuidance.joinSteps as step}
+          <li>{$_(step)}</li>
+        {/each}
+      </ol>
+
+      <div class="modal-actions">
+        <button class="btn primary" onclick={() => offlineGuidance = null}>{$_('offline.close')}</button>
       </div>
     </div>
   </div>
@@ -1583,6 +1650,87 @@
     border-radius: var(--radius-sm);
     padding: 0.5rem 0.625rem;
     word-break: break-word;
+  }
+
+  /* --- Offline / Nearby-Direct --- */
+  .offline-cta {
+    margin-top: 0.625rem;
+    min-height: 1.75rem;
+    align-self: flex-start;
+    background: none;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-dim);
+    font-size: clamp(0.72rem, 2vw, 0.82rem);
+    font-weight: 600;
+    padding: 0.3rem 0.625rem;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .offline-cta:hover {
+    border-color: var(--color-primary);
+    color: var(--color-accent-text);
+  }
+
+  .offline-modal {
+    max-width: min(480px, calc(100vw - 2rem));
+    max-height: calc(100vh - 4rem);
+    overflow-y: auto;
+    text-align: left;
+  }
+
+  .offline-ble-note {
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+  }
+
+  .offline-creds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.75rem 0;
+  }
+
+  .offline-cred-label {
+    display: block;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-dim);
+    margin-bottom: 0.2rem;
+  }
+
+  .offline-cred-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 1.75rem;
+    font-family: var(--font-family-mono);
+    font-weight: 700;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.3rem 0.5rem;
+    color: var(--color-accent-text);
+    cursor: pointer;
+    word-break: break-all;
+  }
+
+  .offline-steps-title {
+    font-size: 0.85rem;
+    margin-top: 0.875rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .offline-steps {
+    margin: 0;
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: clamp(0.8rem, 2.2vw, 0.9rem);
+    color: var(--color-text);
   }
 
   .modal-actions {

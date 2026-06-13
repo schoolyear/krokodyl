@@ -304,12 +304,21 @@ func (r *peerRegistry) snapshotLocked() []NearbyPeer {
 	return out
 }
 
-// startDiscovery runs announce+listen and the liveness sweeper until the
-// returned stop function is called. State changes (available/blocked) are
-// reported through onState. With announce=false ("invisible") we only
-// listen: others can't see us, we still see them — and the self-echo health
-// check is suspended, since we produce no echoes to hear.
+// startDiscovery runs LAN multicast discovery. Thin compat wrapper over
+// multicastSource so existing callers (startNearby, SetNearbyVisible) are
+// unchanged; new code composes sources via compositeDiscovery.
 func startDiscovery(identity discoveryIdentity, registry *peerRegistry, onState func(DiscoveryState), announce bool) (stop func()) {
+	return (&multicastSource{identity: identity, announce: announce}).start(registry, onState)
+}
+
+// start runs announce+listen and the liveness sweeper until the returned stop
+// function is called. State changes (available/blocked) are reported through
+// onState. With announce=false ("invisible") we only listen: others can't see
+// us, we still see them — and the self-echo health check is suspended, since
+// we produce no echoes to hear.
+func (m *multicastSource) start(registry *peerRegistry, onState func(DiscoveryState)) (stop func()) {
+	identity := m.identity
+	announce := m.announce
 	if onState == nil {
 		onState = func(DiscoveryState) {}
 	}
