@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -345,41 +346,138 @@ func (r *localSendReceiver) handleCancel(w http.ResponseWriter, req *http.Reques
 }
 
 // runMulticast announces our presence periodically and, when it hears another
-// device announce, registers back over HTTP so discovery is reliable even if a
+// device announce, registers back over HTTPS so discovery is reliable even if a
 // UDP reply is lost.
+//
+// CRITICAL on multi-adapter Windows: a host with Hyper-V / WSL / NAT virtual
+// switches has several "up" interfaces, and the OS-default multicast interface
+// is frequently one of those virtual switches — NOT the real Wi-Fi the phone is
+// on. net.DialUDP(nil)/ListenMulticastUDP(nil) would then announce/join on an
+// adapter the phone can't hear, so LocalSend never sees us and we never see it.
+// We therefore announce on, and join the group on, EVERY real interface.
 func (r *localSendReceiver) runMulticast() {
 	gaddr := &net.UDPAddr{IP: net.ParseIP(localSendMulticastAddr), Port: localSendPort}
+	ifaces := multicastInterfaces()
 
-	// Listener.
-	conn, err := net.ListenMulticastUDP("udp4", nil, gaddr)
-	if err != nil {
-		logrus.WithError(err).Debug("localsend multicast listen unavailable")
-	} else {
+	// Listen: join the group on each real interface so we hear announcements
+	// regardless of which adapter the sender is on.
+	joined := 0
+	for i := range ifaces {
+		conn, err := net.ListenMulticastUDP("udp4", &ifaces[i], gaddr)
+		if err != nil {
+			logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: multicast join failed")
+			continue
+		}
+		joined++
 		go r.readAnnouncements(conn)
-		go func() { <-r.stopCh; conn.Close() }()
+		c := conn
+		go func() { <-r.stopCh; c.Close() }()
+	}
+	if joined == 0 { // fall back to the OS-default interface
+		if conn, err := net.ListenMulticastUDP("udp4", nil, gaddr); err == nil {
+			go r.readAnnouncements(conn)
+			go func() { <-r.stopCh; conn.Close() }()
+		} else {
+			logrus.WithError(err).Debug("localsend multicast listen unavailable")
+		}
 	}
 
-	// Announcer.
-	out, err := net.DialUDP("udp4", nil, gaddr)
-	if err != nil {
-		logrus.WithError(err).Debug("localsend multicast announce unavailable")
-		return
-	}
-	defer out.Close()
+	// Announce: bind each sender to a real interface's IPv4 so egress is forced
+	// onto that adapter (binding the local addr pins the outgoing interface),
+	// rather than leaving it to the OS-default (often-virtual) multicast route.
 	announce := r.self
 	announce.Announce = true
 	payload, _ := json.Marshal(announce)
 
+	var outs []*net.UDPConn
+	for i := range ifaces {
+		ip := firstIPv4(ifaces[i])
+		if ip == nil {
+			continue
+		}
+		out, err := net.DialUDP("udp4", &net.UDPAddr{IP: ip}, gaddr)
+		if err != nil {
+			logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: multicast announce dial failed")
+			continue
+		}
+		outs = append(outs, out)
+	}
+	if len(outs) == 0 { // fall back to OS-default egress
+		out, err := net.DialUDP("udp4", nil, gaddr)
+		if err != nil {
+			logrus.WithError(err).Debug("localsend multicast announce unavailable")
+			return
+		}
+		outs = append(outs, out)
+	}
+	defer func() {
+		for _, o := range outs {
+			o.Close()
+		}
+	}()
+
 	ticker := time.NewTicker(localSendAnnounceEvery)
 	defer ticker.Stop()
 	for {
-		_, _ = out.Write(payload)
+		for _, o := range outs {
+			_, _ = o.Write(payload)
+		}
 		select {
 		case <-r.stopCh:
 			return
 		case <-ticker.C:
 		}
 	}
+}
+
+// multicastInterfaces returns up, multicast-capable, non-loopback interfaces
+// that have a usable IPv4 address, ordered real-LAN-first (192.168/10 before
+// the 172.16/12 ranges that Hyper-V/Docker virtual switches use). We must
+// explicitly use every real one because the OS default multicast interface on
+// a multi-adapter Windows box is often a virtual switch.
+func multicastInterfaces() []net.Interface {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	type ranked struct {
+		iface net.Interface
+		rank  int
+	}
+	var got []ranked
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 ||
+			iface.Flags&net.FlagLoopback != 0 ||
+			iface.Flags&net.FlagMulticast == 0 {
+			continue
+		}
+		if ip := firstIPv4(iface); ip != nil {
+			got = append(got, ranked{iface, addrRank(ip.String())})
+		}
+	}
+	sort.SliceStable(got, func(i, j int) bool { return got[i].rank < got[j].rank })
+	out := make([]net.Interface, len(got))
+	for i := range got {
+		out[i] = got[i].iface
+	}
+	return out
+}
+
+// firstIPv4 returns the first non-loopback, non-link-local IPv4 address bound
+// to iface, or nil.
+func firstIPv4(iface net.Interface) net.IP {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return nil
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok {
+			if ip4 := ipnet.IP.To4(); ip4 != nil && !ip4.IsLoopback() && !ip4.IsLinkLocalUnicast() {
+				return ip4
+			}
+		}
+	}
+	return nil
 }
 
 func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {

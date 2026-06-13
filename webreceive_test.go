@@ -18,11 +18,9 @@ func newTestReceiver(t *testing.T) (*webReceiver, string) {
 	dir := t.TempDir()
 	var got []string
 	wr := &webReceiver{
-		uploadToken:    "secret-token",
-		bootstrapToken: "boot-token",
-		session:        "sess-token",
-		dest:           dir,
-		sem:            make(chan struct{}, maxConcurrentUploads),
+		token: "secret-token",
+		dest:  dir,
+		sem:   make(chan struct{}, maxConcurrentUploads),
 		onFile: func(name string, size int64) {
 			got = append(got, name)
 		},
@@ -181,7 +179,7 @@ func TestWebReceiverEndToEnd(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, base+"/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set(tokenHeader, wr.uploadToken)
+	req.Header.Set(tokenHeader, wr.token)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -215,7 +213,7 @@ func TestWebReceiverEndToEnd(t *testing.T) {
 	}
 
 	// Plain HTTP to the HTTPS port must NOT serve the API.
-	if hresp, herr := http.Get("http://127.0.0.1:" + itoa(wr.port) + "/?t=" + wr.bootstrapToken); herr == nil {
+	if hresp, herr := http.Get("http://127.0.0.1:" + itoa(wr.port) + "/?t=" + wr.token); herr == nil {
 		if hresp.StatusCode == http.StatusOK {
 			t.Error("plain HTTP must not serve the upload page")
 		}
@@ -243,90 +241,18 @@ func TestPhoneReceiveURL(t *testing.T) {
 	}
 }
 
-// The bootstrap token (in the QR URL) is single-use: the first load redirects
-// and sets a session cookie, a replay from another context is rejected, and a
-// reload via the cookie serves the page — which carries the upload token but
-// NOT the bootstrap token, so the write credential never enters a URL.
-func TestWebReceiverBootstrapSingleUse(t *testing.T) {
+// The page is reloadable: a second GET with the same token must still serve it
+// (a phone browser re-fetches after the self-signed cert interstitial).
+func TestWebReceiverPageReloadable(t *testing.T) {
 	wr, _ := newTestReceiver(t)
-
-	rec := httptest.NewRecorder()
-	wr.handleIndex(rec, httptest.NewRequest(http.MethodGet, "/?t=boot-token", nil))
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("first bootstrap load = %d, want 303 redirect", rec.Code)
-	}
-	var cookie *http.Cookie
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == sessionCookie {
-			cookie = c
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		wr.handleIndex(rec, httptest.NewRequest(http.MethodGet, "/?t=secret-token", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("page load #%d = %d, want 200", i+1, rec.Code)
 		}
-	}
-	if cookie == nil {
-		t.Fatal("first load set no session cookie")
-	}
-	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode {
-		t.Errorf("session cookie attributes too weak: %+v", cookie)
-	}
-
-	// Replay of the bootstrap URL with no cookie (a different device) → 403.
-	rec = httptest.NewRecorder()
-	wr.handleIndex(rec, httptest.NewRequest(http.MethodGet, "/?t=boot-token", nil))
-	if rec.Code != http.StatusForbidden {
-		t.Errorf("replayed bootstrap URL = %d, want 403", rec.Code)
-	}
-
-	// Reload via the session cookie serves the page with the upload token.
-	rec = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(cookie)
-	wr.handleIndex(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("cookie reload = %d, want 200", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, wr.uploadToken) {
-		t.Error("served page must embed the upload token")
-	}
-	if strings.Contains(body, wr.bootstrapToken) {
-		t.Error("served page must NOT contain the bootstrap token")
-	}
-	if rec.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Error("served page must set Referrer-Policy: no-referrer")
-	}
-}
-
-// A wrong bootstrap token must not consume the one-time use: a wrong attempt
-// followed by the correct one must still succeed.
-func TestWebReceiverBootstrapWrongTokenDoesNotBurn(t *testing.T) {
-	wr, _ := newTestReceiver(t)
-
-	rec := httptest.NewRecorder()
-	wr.handleIndex(rec, httptest.NewRequest(http.MethodGet, "/?t=nope", nil))
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("wrong bootstrap = %d, want 403", rec.Code)
-	}
-	rec = httptest.NewRecorder()
-	wr.handleIndex(rec, httptest.NewRequest(http.MethodGet, "/?t=boot-token", nil))
-	if rec.Code != http.StatusSeeOther {
-		t.Errorf("correct bootstrap after a wrong attempt = %d, want 303", rec.Code)
-	}
-}
-
-// The upload token is header-only: presenting it in the URL must NOT authorize
-// an upload.
-func TestWebReceiverUploadRejectsTokenInURL(t *testing.T) {
-	wr, _ := newTestReceiver(t)
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	fw, _ := mw.CreateFormFile("files", "a.txt")
-	fw.Write([]byte("x"))
-	mw.Close()
-	req := httptest.NewRequest(http.MethodPost, "/upload?t=secret-token", &body)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-
-	rec := httptest.NewRecorder()
-	wr.handleUpload(rec, req)
-	if rec.Code == http.StatusOK {
-		t.Error("upload token in the URL must not authorize an upload (header-only)")
+		if !strings.Contains(rec.Body.String(), "secret-token") {
+			t.Errorf("page load #%d did not embed the token", i+1)
+		}
 	}
 }

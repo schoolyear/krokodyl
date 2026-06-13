@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,15 +33,11 @@ import (
 
 const (
 	uploadFieldName = "files"
-	// tokenHeader carries the UPLOAD token on the POST so the write credential
-	// never lands in a URL (not in browser history, not in a Referer header, not
-	// in any access log). The QR URL carries only a separate single-use bootstrap
-	// token that loads the page; the upload token lives in the page body + header.
+	// tokenHeader carries the gate token on the POST so the upload REQUEST need
+	// not put it in a URL (kept out of any Referer / access log). The QR page URL
+	// still carries ?t= because the QR must open the page; the POST prefers the
+	// header. The token is over HTTPS either way.
 	tokenHeader = "X-Krokodyl-Token"
-	// sessionCookie authorizes page reloads after the single-use bootstrap token
-	// has been consumed, so a normal refresh works without re-scanning the QR
-	// while a replayed bootstrap URL (from history, on another device) is dead.
-	sessionCookie = "krokodyl_session"
 	// readHeaderTimeout stops a slow-loris client from pinning a connection
 	// before its headers are even read (the token check can't run until then).
 	// The body itself is NOT time-capped — large uploads need to stream freely.
@@ -62,25 +57,13 @@ const (
 )
 
 // webReceiver owns the opt-in upload server. It is only listening while the
-// device is visible. Token/session fields are set once at construction and
-// never mutated; bootstrapUsed is the only mutable state (atomic).
+// device is visible. Fields are set once at construction and never mutated, so
+// no lock is needed.
 type webReceiver struct {
-	srv  *http.Server
-	dest string
-	port int
-	// bootstrapToken rides the QR URL and authorizes ONE page load, then is
-	// consumed. It cannot upload — it only hands out the page (which carries the
-	// upload token). A replayed bootstrap URL is therefore useless after first use.
-	bootstrapToken string
-	// uploadToken is the sole credential that authorizes a file write. It is
-	// header-only (tokenHeader) and never appears in any URL.
-	uploadToken string
-	// session is the cookie value handed to the first (legit) page load so
-	// reloads keep working after the bootstrap token is spent.
-	session string
-	// bootstrapUsed flips true on the first successful bootstrap load (CAS), so a
-	// later replay of the same URL from another context is rejected.
-	bootstrapUsed atomic.Bool
+	srv   *http.Server
+	token string
+	dest  string
+	port  int
 	// sem bounds concurrent upload streams (buffered to maxConcurrentUploads).
 	sem chan struct{}
 	// onFile is called after each file is fully written, with the actual name
@@ -99,17 +82,9 @@ func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, erro
 	if err != nil || !info.IsDir() {
 		return nil, fmt.Errorf("destination is not a usable directory: %s", dest)
 	}
-	bootstrapTok, err := randomToken()
-	if err != nil {
-		return nil, fmt.Errorf("could not generate bootstrap token: %w", err)
-	}
-	uploadTok, err := randomToken()
+	tok, err := randomToken()
 	if err != nil {
 		return nil, fmt.Errorf("could not generate upload token: %w", err)
-	}
-	sessionTok, err := randomToken()
-	if err != nil {
-		return nil, fmt.Errorf("could not generate session token: %w", err)
 	}
 	// HTTPS only — uploads and the token must never cross the wire in the
 	// clear. Self-signed (no CA), so the phone browser shows a one-time
@@ -127,13 +102,11 @@ func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, erro
 	}
 
 	wr := &webReceiver{
-		dest:           dest,
-		port:           ln.Addr().(*net.TCPAddr).Port,
-		bootstrapToken: bootstrapTok,
-		uploadToken:    uploadTok,
-		session:        sessionTok,
-		sem:            make(chan struct{}, maxConcurrentUploads),
-		onFile:         onFile,
+		token:  tok,
+		dest:   dest,
+		port:   ln.Addr().(*net.TCPAddr).Port,
+		sem:    make(chan struct{}, maxConcurrentUploads),
+		onFile: onFile,
 	}
 
 	mux := http.NewServeMux()
@@ -157,50 +130,28 @@ func ctEqual(got, want string) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
-// hasSession reports whether the request carries the cookie issued to the first
-// legit page load — this is what lets a normal reload work after the one-time
-// bootstrap token has been spent.
-func (wr *webReceiver) hasSession(r *http.Request) bool {
-	c, err := r.Cookie(sessionCookie)
-	return err == nil && ctEqual(c.Value, wr.session)
+// checkToken matches the request's token, header preferred (the upload POST),
+// query fallback (the GET page the QR opens). The page is reloadable so a phone
+// browser — including the cert-warning interstitial flow on a self-signed
+// HTTPS host — can re-fetch it without re-scanning.
+func (wr *webReceiver) checkToken(r *http.Request) bool {
+	got := r.Header.Get(tokenHeader)
+	if got == "" {
+		got = r.URL.Query().Get("t")
+	}
+	return ctEqual(got, wr.token)
 }
 
-// handleIndex serves the upload page. Auth is two-stage so the only credential
-// that can WRITE a file (the upload token) never travels in a URL:
-//   - A valid session cookie (set on the first load) serves the page on reload.
-//   - Otherwise the single-use bootstrap token from the QR URL is required; it
-//     is verified BEFORE being consumed (a wrong token must not burn the one
-//     allowed use), then a session cookie is set and we redirect to a clean,
-//     tokenless URL. A bootstrap URL replayed later (e.g. from history on
-//     another device) finds it already consumed and is rejected.
 func (wr *webReceiver) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if wr.hasSession(r) {
-		wr.servePage(w)
+	if !wr.checkToken(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	if ctEqual(r.URL.Query().Get("t"), wr.bootstrapToken) && wr.bootstrapUsed.CompareAndSwap(false, true) {
-		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookie,
-			Value:    wr.session,
-			Path:     "/",
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteStrictMode,
-		})
-		w.Header().Set("Cache-Control", "no-store")
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-	http.Error(w, "forbidden", http.StatusForbidden)
-}
-
-// servePage writes the upload page, embedding the header-only upload token and
-// keeping the response out of caches / Referer headers.
-func (wr *webReceiver) servePage(w http.ResponseWriter) {
+	// Keep the token-bearing page URL out of caches and Referer headers.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, uploadPageHTML, wr.uploadToken)
+	fmt.Fprintf(w, uploadPageHTML, wr.token)
 }
 
 func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -208,9 +159,7 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Upload token is HEADER-ONLY — never accepted from a URL, so the write
-	// credential cannot leak through history, a Referer, or an access log.
-	if !ctEqual(r.Header.Get(tokenHeader), wr.uploadToken) {
+	if !wr.checkToken(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -470,7 +419,7 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 		return PhoneReceiveInfo{}, fmt.Errorf("phone receiving is unavailable")
 	}
 
-	url := phoneReceiveURL(wr.port, wr.bootstrapToken)
+	url := phoneReceiveURL(wr.port, wr.token)
 	info := PhoneReceiveInfo{URL: url}
 	if png, err := qrcode.Encode(url, qrcode.Medium, 320); err == nil {
 		info.QRPng = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
