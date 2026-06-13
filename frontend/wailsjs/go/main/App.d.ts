@@ -8,6 +8,10 @@ export function ClearHistory():Promise<void>;
 
 export function ConfirmResend(arg1:string):Promise<main.ResendOutcome>;
 
+export function FirewallNeedsFix():Promise<boolean>;
+
+export function FixFirewall():Promise<void>;
+
 export function GetBuildStamp():Promise<string>;
 
 export function GetDefaultDownloadPath():Promise<string>;

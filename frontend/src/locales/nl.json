@@ -162,5 +162,13 @@
     "close": "Stop met ontvangen",
     "failed": "Kan ontvangen van telefoon niet starten.",
     "localsend_note": "Ook vindbaar in de LocalSend-app — kies daar krokodyl om te verzenden zonder scannen."
+  },
+  "firewall": {
+    "title": "Windows Firewall blokkeert inkomende verbindingen",
+    "desc": "Telefoons en andere apps kunnen krokodyl pas bereiken als je het toestaat. Dit vereist eenmalig beheerdersrechten.",
+    "fix": "Toestaan",
+    "fixing": "Bezig met toestaan…",
+    "fixed": "krokodyl is nu toegestaan via de firewall.",
+    "failed": "Kon de firewall niet bijwerken. Bevestig de melding en probeer opnieuw."
   }
 }

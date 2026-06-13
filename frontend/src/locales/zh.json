@@ -162,5 +162,13 @@
     "close": "停止接收",
     "failed": "无法启动从手机接收。",
     "localsend_note": "也可在 LocalSend 应用中发现——在那里选择 krokodyl 即可无需扫码发送。"
+  },
+  "firewall": {
+    "title": "Windows 防火墙正在阻止传入连接",
+    "desc": "在你允许之前，手机和其他应用无法访问 krokodyl。这需要一次管理员授权。",
+    "fix": "允许",
+    "fixing": "正在允许…",
+    "fixed": "krokodyl 现已通过防火墙允许。",
+    "failed": "无法更新防火墙。请在提示中确认后重试。"
   }
 }

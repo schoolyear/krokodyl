@@ -14,6 +14,14 @@ export function ConfirmResend(arg1) {
   return window['go']['main']['App']['ConfirmResend'](arg1);
 }
 
+export function FirewallNeedsFix() {
+  return window['go']['main']['App']['FirewallNeedsFix']();
+}
+
+export function FixFirewall() {
+  return window['go']['main']['App']['FixFirewall']();
+}
+
 export function GetBuildStamp() {
   return window['go']['main']['App']['GetBuildStamp']();
 }

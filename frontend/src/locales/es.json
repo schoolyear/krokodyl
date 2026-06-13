@@ -162,5 +162,13 @@
     "close": "Dejar de recibir",
     "failed": "No se pudo iniciar la recepcion desde el telefono.",
     "localsend_note": "Tambien visible en la app LocalSend — elige krokodyl alli para enviar sin escanear."
+  },
+  "firewall": {
+    "title": "El Firewall de Windows esta bloqueando las conexiones entrantes",
+    "desc": "Los telefonos y otras apps no pueden acceder a krokodyl hasta que lo permitas. Requiere aprobacion de administrador una vez.",
+    "fix": "Permitir",
+    "fixing": "Permitiendo…",
+    "fixed": "krokodyl ahora esta permitido a traves del firewall.",
+    "failed": "No se pudo actualizar el firewall. Acepta el aviso e intentalo de nuevo."
   }
 }

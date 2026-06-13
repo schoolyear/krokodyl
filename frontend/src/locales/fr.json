@@ -162,5 +162,13 @@
     "close": "Arreter la reception",
     "failed": "Impossible de demarrer la reception depuis le telephone.",
     "localsend_note": "Aussi visible dans l'application LocalSend — choisissez-y krokodyl pour envoyer sans scanner."
+  },
+  "firewall": {
+    "title": "Le pare-feu Windows bloque les connexions entrantes",
+    "desc": "Les telephones et autres applis ne peuvent pas joindre krokodyl tant que vous ne l'autorisez pas. Une approbation administrateur est requise une fois.",
+    "fix": "Autoriser",
+    "fixing": "Autorisation…",
+    "fixed": "krokodyl est maintenant autorise par le pare-feu.",
+    "failed": "Impossible de mettre a jour le pare-feu. Acceptez l'invite et reessayez."
   }
 }

@@ -162,5 +162,13 @@
     "close": "Stop receiving",
     "failed": "Could not start phone receiving.",
     "localsend_note": "Also discoverable in the LocalSend app — pick krokodyl there to send without scanning."
+  },
+  "firewall": {
+    "title": "Windows Firewall is blocking incoming connections",
+    "desc": "Phones and other apps can't reach krokodyl until you allow it. This needs admin approval once.",
+    "fix": "Allow",
+    "fixing": "Allowing…",
+    "fixed": "krokodyl is now allowed through the firewall.",
+    "failed": "Couldn't update the firewall. Approve the prompt and try again."
   }
 }

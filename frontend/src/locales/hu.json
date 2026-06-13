@@ -162,5 +162,13 @@
     "close": "Fogadas leallitasa",
     "failed": "Nem sikerult elinditani a fogadast telefonrol.",
     "localsend_note": "A LocalSend appban is megtalalhato — valaszd ott a krokodylt kuldeshez szkenneles nelkul."
+  },
+  "firewall": {
+    "title": "A Windows tuzfal blokkolja a bejovo kapcsolatokat",
+    "desc": "A telefonok es mas alkalmazasok nem erik el a krokodylt, amig nem engedelyezed. Ehhez egyszeri rendszergazdai jovahagyas kell.",
+    "fix": "Engedelyezes",
+    "fixing": "Engedelyezes…",
+    "fixed": "A krokodyl mostantol at van engedve a tuzfalon.",
+    "failed": "Nem sikerult frissiteni a tuzfalat. Hagyd jova a kerest, es probald ujra."
   }
 }

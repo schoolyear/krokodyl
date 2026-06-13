@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive, FirewallNeedsFix, FixFirewall } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -70,6 +70,8 @@
   let lastPeerName = $state('');
   let deviceName = $state('');
   let buildStamp = $state('');
+  let firewallBlocked = $state(false); // Windows: no inbound allow rule for krokodyl
+  let firewallFixing = $state(false);
   let showClearConfirm = $state(false);
   // Per-row note shown when a "send again" can't proceed (e.g. device gone),
   // so the feedback sits right where the user clicked, not just in a toast.
@@ -152,6 +154,13 @@
         destinationPath = await GetDefaultDownloadPath();
       } catch (error) {
         console.error("Could not get default download path", error);
+      }
+      try {
+        // Windows-only: surfaces the "Fix firewall" banner when no inbound
+        // allow rule exists (always false elsewhere / once a rule is present).
+        firewallBlocked = await FirewallNeedsFix();
+      } catch (error) {
+        console.error('Could not check firewall status', error);
       }
     };
     init();
@@ -375,6 +384,24 @@
     }, 3000);
   }
 
+  // runFirewallFix triggers the backend's elevated rule add (one UAC prompt),
+  // then re-checks so the banner clears on success.
+  async function runFirewallFix() {
+    if (firewallFixing) return;
+    firewallFixing = true;
+    try {
+      await FixFirewall();
+      firewallBlocked = await FirewallNeedsFix();
+      showToast(firewallBlocked ? $_('firewall.failed') : $_('firewall.fixed'), firewallBlocked ? 'error' : 'success');
+    } catch (error) {
+      console.error('firewall fix failed', error);
+      showToast($_('firewall.failed'), 'error');
+      firewallBlocked = await FirewallNeedsFix().catch(() => true);
+    } finally {
+      firewallFixing = false;
+    }
+  }
+
   async function handleOverwriteResponse(response: 'yes' | 'no') {
     if (!overwritePrompt) return;
     // Clear the prompt before awaiting so a double-click or Enter+Escape
@@ -565,6 +592,19 @@
 
     <main class="scroll-area">
     <section class="surface">
+      {#if firewallBlocked}
+        <div class="firewall-banner" role="alert">
+          <span class="firewall-icon" aria-hidden="true">🛡️</span>
+          <div class="firewall-text">
+            <p class="firewall-title">{$_('firewall.title')}</p>
+            <p class="firewall-desc">{$_('firewall.desc')}</p>
+          </div>
+          <button class="firewall-fix" onclick={runFirewallFix} disabled={firewallFixing} aria-label={$_('firewall.fix')}>
+            {firewallFixing ? $_('firewall.fixing') : $_('firewall.fix')}
+          </button>
+        </div>
+      {/if}
+
       <div class="segmented" role="tablist" aria-label={$_('a11y.tabs')}>
         <button class="segment" class:active={activeTab === 'send'} role="tab" id="tab-send" aria-controls="panel-send" aria-selected={activeTab === 'send'} tabindex={activeTab === 'send' ? 0 : -1} onclick={() => activeTab = 'send'} onkeydown={handleTabKeydown}>
           📤 {$_('tabs.send')}
@@ -963,6 +1003,55 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+  }
+
+  /* --- Firewall fix banner (Windows: no inbound allow rule) --- */
+  .firewall-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-danger-strong);
+    background-color: color-mix(in srgb, var(--color-danger-strong) 12%, transparent);
+  }
+  .firewall-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .firewall-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .firewall-title {
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .firewall-desc {
+    margin: 0.15rem 0 0;
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+  }
+  .firewall-fix {
+    flex-shrink: 0;
+    padding: 0.5rem 0.9rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary-strong);
+    color: #fff;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .firewall-fix:hover:not(:disabled) {
+    background-color: var(--color-primary-strong-hover);
+  }
+  .firewall-fix:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .segmented {

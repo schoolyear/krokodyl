@@ -1393,6 +1393,21 @@ func (a *App) GetBuildStamp() string {
 	return buildStamp
 }
 
+// FirewallNeedsFix reports whether Windows Firewall is likely blocking inbound
+// LAN connections to krokodyl (no allow rule for this executable). The frontend
+// uses it to offer a one-click fix. Always false off Windows / when a rule is
+// already present (e.g. added by the installer), so no banner shows there.
+func (a *App) FirewallNeedsFix() bool {
+	return firewallNeedsFix()
+}
+
+// FixFirewall adds the inbound allow rule via a single elevated command (one UAC
+// prompt, triggered by the user clicking "Fix"). Returns an error to the
+// frontend if the prompt is declined or the rule can't be confirmed.
+func (a *App) FixFirewall() error {
+	return fixFirewall()
+}
+
 // ClearHistory empties the transfer list and the persisted history file.
 func (a *App) ClearHistory() {
 	a.tm.reset()
