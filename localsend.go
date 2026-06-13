@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"crypto/tls"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -362,34 +364,39 @@ func (r *localSendReceiver) handleCancel(w http.ResponseWriter, req *http.Reques
 // CRITICAL on multi-adapter Windows: a host with Hyper-V / WSL / NAT virtual
 // switches has several "up" interfaces, and the OS-default multicast interface
 // is frequently one of those virtual switches — NOT the real Wi-Fi the phone is
-// on. net.DialUDP(nil)/ListenMulticastUDP(nil) would then announce/join on an
-// adapter the phone can't hear, so LocalSend never sees us and we never see it.
-// We therefore announce on, and join the group on, EVERY real interface.
+// on. We therefore announce on, and join the group on, EVERY real interface.
+//
+// RECEIVE on Windows requires binding 0.0.0.0:port and JoinGroup via the socket
+// option. net.ListenMulticastUDP binds the GROUP ADDRESS, which on Windows SENDS
+// fine but RECEIVES NOTHING (verified on a real box: not even loopback). That
+// bug made krokodyl deaf to the phone's announce, so it never registered back
+// and the phone never saw it. The official LocalSend app binds 0.0.0.0, hence it
+// worked where we didn't.
 func (r *localSendReceiver) runMulticast() {
 	gaddr := &net.UDPAddr{IP: net.ParseIP(localSendMulticastAddr), Port: localSendPort}
 	ifaces := multicastInterfaces()
 
-	// Listen: join the group on each real interface so we hear announcements
-	// regardless of which adapter the sender is on.
-	joined := 0
-	for i := range ifaces {
-		conn, err := net.ListenMulticastUDP("udp4", &ifaces[i], gaddr)
-		if err != nil {
-			logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: multicast join failed")
-			continue
+	// Listen: one socket bound to 0.0.0.0:port (SO_REUSEADDR so we coexist with
+	// the official LocalSend app), joining the group on each real interface.
+	lc := net.ListenConfig{Control: controlReuseAddr}
+	if pktConn, err := lc.ListenPacket(context.Background(), "udp4", fmt.Sprintf("0.0.0.0:%d", localSendPort)); err != nil {
+		logrus.WithError(err).Debug("localsend multicast listen unavailable")
+	} else {
+		rpc := ipv4.NewPacketConn(pktConn)
+		_ = rpc.SetMulticastLoopback(true)
+		joined := 0
+		for i := range ifaces {
+			if err := rpc.JoinGroup(&ifaces[i], gaddr); err != nil {
+				logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: JoinGroup failed")
+				continue
+			}
+			joined++
 		}
-		joined++
-		go r.readAnnouncements(conn)
-		c := conn
-		go func() { <-r.stopCh; c.Close() }()
-	}
-	if joined == 0 { // fall back to the OS-default interface
-		if conn, err := net.ListenMulticastUDP("udp4", nil, gaddr); err == nil {
-			go r.readAnnouncements(conn)
-			go func() { <-r.stopCh; conn.Close() }()
-		} else {
-			logrus.WithError(err).Debug("localsend multicast listen unavailable")
+		if joined == 0 {
+			_ = rpc.JoinGroup(nil, gaddr) // OS-default interface
 		}
+		go r.readAnnouncements(rpc)
+		go func() { <-r.stopCh; pktConn.Close() }()
 	}
 
 	// Announce: one socket, explicitly setting the multicast EGRESS interface
@@ -486,10 +493,10 @@ func firstIPv4(iface net.Interface) net.IP {
 	return nil
 }
 
-func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {
+func (r *localSendReceiver) readAnnouncements(pc *ipv4.PacketConn) {
 	buf := make([]byte, 4096)
 	for {
-		n, src, err := conn.ReadFromUDP(buf)
+		n, _, src, err := pc.ReadFrom(buf)
 		if err != nil {
 			return // closed
 		}
@@ -500,6 +507,10 @@ func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {
 		if info.Fingerprint == r.self.Fingerprint {
 			continue // our own announcement
 		}
+		host := ""
+		if ua, ok := src.(*net.UDPAddr); ok {
+			host = ua.IP.String()
+		}
 		// Bound concurrent register-backs so a multicast flood can't spawn
 		// unbounded goroutines / outbound POSTs; drop when saturated.
 		select {
@@ -507,10 +518,21 @@ func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {
 			go func(host string, port int, fp string) {
 				defer func() { <-r.registerSem }()
 				r.registerWith(host, port, fp)
-			}(src.IP.String(), info.Port, info.Fingerprint)
+			}(host, info.Port, info.Fingerprint)
 		default:
 		}
 	}
+}
+
+// controlReuseAddr is a net.ListenConfig hook that sets SO_REUSEADDR on the
+// socket before bind, so krokodyl's multicast listener can share the port with
+// the official LocalSend app's listener.
+func controlReuseAddr(_, _ string, c syscall.RawConn) error {
+	var serr error
+	if err := c.Control(func(fd uintptr) { serr = setReuseAddr(fd) }); err != nil {
+		return err
+	}
+	return serr
 }
 
 // startLocalSend brings up LocalSend interop for the opt-in receive window.
