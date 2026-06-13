@@ -13,6 +13,7 @@ A small, AirDrop-style **peer-to-peer file transfer** desktop app. Drop files, s
 - **Code transfer** — share a short human code; works on the same LAN or across networks.
 - **Nearby devices** — AirDrop-style discovery on the local network; send with no code, just pick a device. What arrives is checked against what was offered — a mismatch asks you before anything is kept.
 - **No network? Connect directly** — in the field with no internet *and* no shared Wi-Fi, the "Connect directly" guide walks you through creating a one-off hotspot between the two devices; once they share that network the normal nearby + transfer flow takes over at full Wi-Fi speed. (Automatic Bluetooth pairing — which hands the hotspot credentials over for you — is implemented behind a build flag and pending on-hardware validation; see *Offline mode* below.)
+- **Receive from a phone** — "Receive from a phone" shows a QR code; scan it with any iOS/Android phone and a browser upload page opens (no app install) — pick files and they land in krokodyl, over the shared Wi-Fi or the offline hotspot. (Native Apple AirDrop / Android Quick Share are *not* supported — they're closed, app-only protocols; the QR upload is the portable equivalent. See *Receiving from a phone* below.)
 - **Resilient transfers** — survives Wi-Fi drops: stall detection, auto-reconnect, and **resume from where it left off** (the progress bar continues instead of restarting).
 - **Big files** — streamed and chunked; no practical size cap.
 - **Resend** — repeat a past transfer to the same device in one click (remembers the device even if it renamed); you confirm the target's name and address before anything is sent.
@@ -24,6 +25,7 @@ A small, AirDrop-style **peer-to-peer file transfer** desktop app. Drop files, s
 - **Transfers** are end-to-end encrypted by croc's PAKE: the short code is the shared secret; the relay never sees plaintext.
 - **Nearby control channel** is TLS 1.3, pinned to the certificate fingerprint each device announces — and because LAN announcements are inherently unauthenticated, every consequential action keeps a human in the loop: you accept offers, confirm resend targets, and approve any received content that doesn't match the offer.
 - **Untrusted input is sanitized and contained**: sender-supplied file names are validated against path traversal (including Windows device names and NTFS tricks), display names are stripped of control and BiDi-spoofing characters, and wire messages are size-capped with per-source rate limiting.
+- **Phone upload server** (when you turn on "Receive from a phone") binds only while the dialog is open, gates every request with a single-use 128-bit token sent in a header (never a URL), caps request size, times out slow connections, and sanitizes uploaded filenames against path traversal.
 - Settings and history are stored owner-only (0600); transfer codes are never logged or persisted.
 
 ## Offline mode (no internet, no shared network)
@@ -35,6 +37,16 @@ krokodyl normally finds peers over the local network and transfers via croc — 
 3. The other joins, and the **normal nearby + croc transfer** runs over the hotspot at full Wi-Fi speed.
 
 What ships today is the **guided** path: the app generates a network name + password and shows per-OS steps to create/join the hotspot manually, then transfers as usual. The **automatic** Bluetooth handoff is implemented but compiled out by default (`-tags krokodyl_ble`) until it's validated on real two-machine hardware — so release binaries never depend on an unverified radio path. Note: macOS can only *join* over Bluetooth (it cannot advertise), and hotspot creation is scriptable on Windows/Linux but manual on macOS.
+
+## Receiving from a phone
+
+There is **no krokodyl phone app**, and Apple AirDrop / Android Quick Share are closed protocols a desktop app can't join (AirDrop's AWDL has no Windows support and needs a monitor-mode Wi-Fi card; Quick Share is an encrypted, account-gated Google protocol). So krokodyl uses the portable approach every cross-platform tool uses:
+
+1. Click **"Receive from a phone."** krokodyl starts a small upload server on your local network and shows a QR code + address.
+2. Scan the QR with the phone's camera (or open the address in its browser). Both devices must be on the same Wi-Fi — or the offline hotspot from *Offline mode*.
+3. Pick files on the phone; they upload straight into your downloads folder.
+
+It works from any phone with no app install. The server runs only while the dialog is open, every request is gated by a single-use 128-bit token (carried in a request header, not the URL), and uploaded filenames are sanitized against path traversal before anything is written.
 
 ## Installation
 
