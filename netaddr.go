@@ -49,10 +49,55 @@ func localUnicastIPs() []string {
 	sort.SliceStable(ips, func(i, j int) bool {
 		return addrRank(ips[i]) < addrRank(ips[j])
 	})
+	// Prefix rank is a heuristic and gets the wrong answer on a multi-adapter
+	// host: e.g. a phone hotspot hands the laptop 172.20.10.x while a host-only
+	// virtual switch (AutoVirtNAT 10.x / Hyper-V 172.20.128.x) ranks higher by
+	// prefix. The address the OS uses to reach the outside world is the one the
+	// peer on that same link can actually reach, so it goes first.
+	if primary := primaryOutboundIP(); primary != "" {
+		ips = moveToFront(ips, primary)
+	}
 	if len(ips) > maxAdvertisedAddrs {
 		ips = ips[:maxAdvertisedAddrs]
 	}
 	return ips
+}
+
+// primaryOutboundIP returns the source IPv4 the OS would use to reach an
+// external host — the address bound to the default-route interface. A UDP
+// "connection" sends no packets; it only triggers a routing-table lookup and a
+// local-address bind, so this works offline and leaks nothing. It is the IP a
+// peer on the shared Wi-Fi or a joined phone hotspot can actually reach, and it
+// sidesteps host-only virtual adapters that confuse prefix ranking. "" if it
+// can't be determined (caller falls back to the ranked list).
+func primaryOutboundIP() string {
+	conn, err := net.Dial("udp4", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	ua, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return ""
+	}
+	ip4 := ua.IP.To4()
+	if ip4 == nil || ip4.IsLoopback() || ip4.IsLinkLocalUnicast() || ip4.IsUnspecified() {
+		return ""
+	}
+	return ip4.String()
+}
+
+// moveToFront returns ips with target first (added if absent), de-duplicated,
+// preserving the order of the rest.
+func moveToFront(ips []string, target string) []string {
+	out := make([]string, 0, len(ips)+1)
+	out = append(out, target)
+	for _, ip := range ips {
+		if ip != target {
+			out = append(out, ip)
+		}
+	}
+	return out
 }
 
 // addrRank orders candidates: ordinary home/office LANs first, the ranges

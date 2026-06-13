@@ -59,3 +59,23 @@ func TestOrderedCandidatesEmpty(t *testing.T) {
 		t.Errorf("expected no candidates, got %v", got)
 	}
 }
+
+func TestMoveToFront(t *testing.T) {
+	// Present: target jumps to front, order of the rest preserved, no dup.
+	got := moveToFront([]string{"10.0.0.1", "172.20.10.2", "172.20.128.1"}, "172.20.10.2")
+	want := []string{"172.20.10.2", "10.0.0.1", "172.20.128.1"}
+	if len(got) != len(want) {
+		t.Fatalf("len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("moveToFront = %v, want %v", got, want)
+		}
+	}
+
+	// Absent: target is prepended.
+	got = moveToFront([]string{"192.168.1.5"}, "172.20.10.2")
+	if len(got) != 2 || got[0] != "172.20.10.2" {
+		t.Errorf("absent target should be prepended, got %v", got)
+	}
+}
