@@ -102,7 +102,8 @@
     "theme_light": "Cambiar al tema claro",
     "language": "Idioma",
     "copy_ssid": "Copiar el nombre de red {value}",
-    "copy_psk": "Copiar la contrasena {value}"
+    "copy_psk": "Copiar la contrasena {value}",
+    "copy_url": "Copiar la direccion {value}"
   },
   "verify": {
     "title": "Los archivos recibidos no coinciden con la oferta",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "No se pudieron cargar los datos de la conexion sin conexion."
+  },
+  "phone": {
+    "cta": "Recibir desde un telefono",
+    "title": "Recibir desde un telefono",
+    "subtitle": "Escanea este codigo con la camara de tu telefono, o abre la siguiente direccion en su navegador. Ambos dispositivos deben estar en la misma Wi-Fi.",
+    "url_label": "O abre esta direccion",
+    "same_network": "Los archivos que elijas en el telefono llegan a tu carpeta de descargas.",
+    "qr_alt": "Codigo QR a la pagina de subida de krokodyl",
+    "close": "Dejar de recibir",
+    "failed": "No se pudo iniciar la recepcion desde el telefono."
   }
 }

@@ -85,3 +85,11 @@ export function SendToPeer(arg1, arg2) {
 export function SetNearbyVisible(arg1) {
   return window['go']['main']['App']['SetNearbyVisible'](arg1);
 }
+
+export function StartPhoneReceive() {
+  return window['go']['main']['App']['StartPhoneReceive']();
+}
+
+export function StopPhoneReceive() {
+  return window['go']['main']['App']['StopPhoneReceive']();
+}

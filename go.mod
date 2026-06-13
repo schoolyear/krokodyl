@@ -7,6 +7,7 @@ require (
 	github.com/schollz/croc/v10 v10.4.4
 	github.com/schollz/peerdiscovery v1.7.6
 	github.com/sirupsen/logrus v1.9.4
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.12.0
 	tinygo.org/x/bluetooth v0.15.0
 )
@@ -42,7 +43,6 @@ require (
 	github.com/schollz/logger v1.2.0 // indirect
 	github.com/schollz/pake/v3 v3.1.1 // indirect
 	github.com/schollz/progressbar/v3 v3.19.0 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/soypat/cyw43439 v0.1.0 // indirect
 	github.com/soypat/lneto v0.1.0 // indirect
 	github.com/soypat/seqs v0.0.0-20250124201400-0d65bc7c1710 // indirect

@@ -102,7 +102,8 @@
     "theme_light": "Switch to light theme",
     "language": "Language",
     "copy_ssid": "Copy network name {value}",
-    "copy_psk": "Copy password {value}"
+    "copy_psk": "Copy password {value}",
+    "copy_url": "Copy address {value}"
   },
   "verify": {
     "title": "Received files don't match the offer",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "Could not load the offline connection details."
+  },
+  "phone": {
+    "cta": "Receive from a phone",
+    "title": "Receive from a phone",
+    "subtitle": "Scan this code with your phone's camera, or open the address below in its browser. Both devices must be on the same Wi-Fi.",
+    "url_label": "Or open this address",
+    "same_network": "Files you pick on the phone arrive in your downloads folder.",
+    "qr_alt": "QR code linking to the krokodyl upload page",
+    "close": "Stop receiving",
+    "failed": "Could not start phone receiving."
   }
 }

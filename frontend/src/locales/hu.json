@@ -102,7 +102,8 @@
     "theme_light": "Váltás világos témára",
     "language": "Nyelv",
     "copy_ssid": "Halozat nevenek masolasa: {value}",
-    "copy_psk": "Jelszo masolasa: {value}"
+    "copy_psk": "Jelszo masolasa: {value}",
+    "copy_url": "Cim masolasa: {value}"
   },
   "verify": {
     "title": "A kapott fájlok nem egyeznek az ajánlattal",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "Nem sikerult betolteni az offline kapcsolat adatait."
+  },
+  "phone": {
+    "cta": "Fogadas telefonrol",
+    "title": "Fogadas telefonrol",
+    "subtitle": "Olvasd be ezt a kodot a telefon kamerajaval, vagy nyisd meg az alabbi cimet a bongeszojeben. Mindket eszkoznek ugyanazon a Wi-Fi-n kell lennie.",
+    "url_label": "Vagy nyisd meg ezt a cimet",
+    "same_network": "A telefonon kivalasztott fajlok a letoltesi mappadba erkeznek.",
+    "qr_alt": "QR-kod a krokodyl feltoltesi oldalra",
+    "close": "Fogadas leallitasa",
+    "failed": "Nem sikerult elinditani a fogadast telefonrol."
   }
 }

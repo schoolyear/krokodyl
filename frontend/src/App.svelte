@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive, StopPhoneReceive } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -108,6 +108,13 @@
   }
   // The "no shared network" guidance modal (manual hotspot + credentials).
   let offlineGuidance: OfflineGuidance | null = $state(null);
+
+  interface PhoneReceiveInfo {
+    url: string;
+    qrPng: string;
+  }
+  // The phone-upload QR modal; non-null means the upload server is running.
+  let phoneReceive: PhoneReceiveInfo | null = $state(null);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -376,6 +383,20 @@
     await RespondToOverwrite(promptId, response);
   }
 
+  async function startPhoneReceive() {
+    try {
+      phoneReceive = await StartPhoneReceive();
+    } catch (error) {
+      console.error('Could not start phone receive', error);
+      showToast($_('phone.failed'), 'error');
+    }
+  }
+
+  function stopPhoneReceive() {
+    phoneReceive = null;
+    StopPhoneReceive().catch((e) => console.error('Could not stop phone receive', e));
+  }
+
   async function openOffline() {
     try {
       offlineGuidance = await GetOfflineGuidance();
@@ -639,6 +660,10 @@
               <span>📦 {$_('receive.button_receive')}</span>
             {/if}
           </button>
+
+          <button class="offline-cta" onclick={startPhoneReceive}>
+            <span aria-hidden="true">📱</span> {$_('phone.cta')}
+          </button>
         </div>
       {/if}
     </section>
@@ -872,6 +897,28 @@
 
       <div class="modal-actions">
         <button class="btn primary" onclick={() => offlineGuidance = null}>{$_('offline.close')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if phoneReceive}
+  <div class="modal-backdrop">
+    <div class="modal phone-modal" role="dialog" aria-modal="true" aria-labelledby="phone-modal-title" use:modalDialog={stopPhoneReceive}>
+      <h2 id="phone-modal-title">{$_('phone.title')}</h2>
+      <p>{$_('phone.subtitle')}</p>
+      {#if phoneReceive.qrPng}
+        <img class="phone-qr" src={phoneReceive.qrPng} alt={$_('phone.qr_alt')} width="220" height="220" />
+      {/if}
+      <div>
+        <span class="offline-cred-label">{$_('phone.url_label')}</span>
+        <button class="offline-cred-value" onclick={() => phoneReceive && copyToClipboard(phoneReceive.url)} aria-label={$_('a11y.copy_url', { values: { value: phoneReceive.url } })} title={$_('transfer.copy_prompt')}>
+          {phoneReceive.url} <span aria-hidden="true">⧉</span>
+        </button>
+      </div>
+      <p class="offline-ble-note">{$_('phone.same_network')}</p>
+      <div class="modal-actions">
+        <button class="btn primary" onclick={stopPhoneReceive}>{$_('phone.close')}</button>
       </div>
     </div>
   </div>
@@ -1731,6 +1778,25 @@
     gap: 0.3rem;
     font-size: clamp(0.8rem, 2.2vw, 0.9rem);
     color: var(--color-text);
+  }
+
+  .phone-modal {
+    text-align: center;
+  }
+
+  .phone-qr {
+    display: block;
+    margin: 0.75rem auto;
+    /* White quiet-zone so the code scans on any theme. */
+    background: #fff;
+    padding: 0.5rem;
+    border-radius: var(--radius-sm);
+    width: 220px;
+    height: 220px;
+  }
+
+  .phone-modal .offline-cred-label {
+    text-align: left;
   }
 
   .modal-actions {

@@ -43,3 +43,7 @@ export function SendFiles(arg1:Array<string>):Promise<string>;
 export function SendToPeer(arg1:string,arg2:Array<string>):Promise<string>;
 
 export function SetNearbyVisible(arg1:boolean):Promise<void>;
+
+export function StartPhoneReceive():Promise<main.PhoneReceiveInfo>;
+
+export function StopPhoneReceive():Promise<void>;

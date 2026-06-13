@@ -102,7 +102,8 @@
     "theme_light": "Passer au thème clair",
     "language": "Langue",
     "copy_ssid": "Copier le nom du reseau {value}",
-    "copy_psk": "Copier le mot de passe {value}"
+    "copy_psk": "Copier le mot de passe {value}",
+    "copy_url": "Copier l'adresse {value}"
   },
   "verify": {
     "title": "Les fichiers reçus ne correspondent pas à l'offre",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "Impossible de charger les details de la connexion hors ligne."
+  },
+  "phone": {
+    "cta": "Recevoir depuis un telephone",
+    "title": "Recevoir depuis un telephone",
+    "subtitle": "Scannez ce code avec l'appareil photo de votre telephone, ou ouvrez l'adresse ci-dessous dans son navigateur. Les deux appareils doivent etre sur le meme Wi-Fi.",
+    "url_label": "Ou ouvrez cette adresse",
+    "same_network": "Les fichiers choisis sur le telephone arrivent dans votre dossier de telechargements.",
+    "qr_alt": "Code QR vers la page d'envoi krokodyl",
+    "close": "Arreter la reception",
+    "failed": "Impossible de demarrer la reception depuis le telephone."
   }
 }

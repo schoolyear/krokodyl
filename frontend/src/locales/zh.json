@@ -102,7 +102,8 @@
     "theme_light": "切换到浅色主题",
     "language": "语言",
     "copy_ssid": "复制网络名称 {value}",
-    "copy_psk": "复制密码 {value}"
+    "copy_psk": "复制密码 {value}",
+    "copy_url": "复制地址 {value}"
   },
   "verify": {
     "title": "收到的文件与提议不符",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "无法加载离线连接详情。"
+  },
+  "phone": {
+    "cta": "从手机接收",
+    "title": "从手机接收",
+    "subtitle": "用手机相机扫描此二维码，或在手机浏览器中打开下面的地址。两台设备必须在同一 Wi-Fi 上。",
+    "url_label": "或打开此地址",
+    "same_network": "你在手机上选择的文件会保存到你的下载文件夹。",
+    "qr_alt": "指向 krokodyl 上传页面的二维码",
+    "close": "停止接收",
+    "failed": "无法启动从手机接收。"
   }
 }

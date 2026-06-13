@@ -57,6 +57,10 @@ type App struct {
 	// guided manual hotspot pairing.
 	ble bleRadio
 
+	// webRecv is the opt-in phone→desktop upload server; nil unless the user
+	// has "Receive from phone" turned on.
+	webRecv *webReceiver
+
 	historyMu sync.Mutex
 
 	nearby          *peerRegistry
@@ -433,12 +437,17 @@ func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	stop := a.stopDiscovery
 	srv := a.nearbySrv
+	webRecv := a.webRecv
+	a.webRecv = nil
 	a.mu.Unlock()
 	if stop != nil {
 		stop()
 	}
 	if srv != nil {
 		srv.close()
+	}
+	if webRecv != nil {
+		webRecv.close()
 	}
 
 	a.mu.Lock()

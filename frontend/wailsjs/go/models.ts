@@ -94,6 +94,20 @@ export namespace main {
 	        this.joinSteps = source["joinSteps"];
 	    }
 	}
+	export class PhoneReceiveInfo {
+	    url: string;
+	    qrPng: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PhoneReceiveInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.qrPng = source["qrPng"];
+	    }
+	}
 	export class ResendOutcome {
 	    started: boolean;
 	    message: string;

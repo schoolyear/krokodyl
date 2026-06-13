@@ -102,7 +102,8 @@
     "theme_light": "Schakel naar licht thema",
     "language": "Taal",
     "copy_ssid": "Kopieer netwerknaam {value}",
-    "copy_psk": "Kopieer wachtwoord {value}"
+    "copy_psk": "Kopieer wachtwoord {value}",
+    "copy_url": "Kopieer adres {value}"
   },
   "verify": {
     "title": "Ontvangen bestanden komen niet overeen met het aanbod",
@@ -152,5 +153,15 @@
       }
     },
     "load_failed": "Kan de offline verbindingsgegevens niet laden."
+  },
+  "phone": {
+    "cta": "Ontvangen van een telefoon",
+    "title": "Ontvangen van een telefoon",
+    "subtitle": "Scan deze code met de camera van je telefoon, of open het onderstaande adres in de browser. Beide apparaten moeten op dezelfde wifi zitten.",
+    "url_label": "Of open dit adres",
+    "same_network": "Bestanden die je op de telefoon kiest, komen in je downloadmap terecht.",
+    "qr_alt": "QR-code naar de krokodyl-uploadpagina",
+    "close": "Stop met ontvangen",
+    "failed": "Kan ontvangen van telefoon niet starten."
   }
 }
