@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -77,7 +78,17 @@ func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, erro
 	if _, err := rand.Read(tok); err != nil {
 		return nil, fmt.Errorf("could not generate upload token: %w", err)
 	}
-	ln, err := net.Listen("tcp", ":0")
+	// HTTPS only — uploads and the token must never cross the wire in the
+	// clear. Self-signed (no CA), so the phone browser shows a one-time
+	// "not private" warning; the connection is still encrypted.
+	cert, err := ephemeralCertificate()
+	if err != nil {
+		return nil, fmt.Errorf("could not create upload certificate: %w", err)
+	}
+	ln, err := tls.Listen("tcp", ":0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not open upload port: %w", err)
 	}
@@ -266,7 +277,7 @@ func phoneReceiveURL(port int, token string) string {
 	if ips := localUnicastIPs(); len(ips) > 0 {
 		host = ips[0]
 	}
-	return fmt.Sprintf("http://%s:%d/?t=%s", host, port, token)
+	return fmt.Sprintf("https://%s:%d/?t=%s", host, port, token)
 }
 
 // PhoneReceiveInfo is handed to the frontend so it can show the QR + URL.

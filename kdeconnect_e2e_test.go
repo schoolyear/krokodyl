@@ -38,8 +38,13 @@ func TestKDEConnectEndToEnd(t *testing.T) {
 
 	const payload = "hello from kde connect"
 
+	// One device cert, used for BOTH the control connection (as client cert)
+	// and the payload server — the receiver pins the payload to the control
+	// cert, so they must match (as a real KDE Connect device does).
+	cfg := senderTLSConfig(t)
+
 	// Serve the file payload on our own TLS port (the sender side of a share).
-	payLn, err := tls.Listen("tcp", "127.0.0.1:0", senderTLSConfig(t))
+	payLn, err := tls.Listen("tcp", "127.0.0.1:0", cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,8 +59,8 @@ func TestKDEConnectEndToEnd(t *testing.T) {
 		c.Write([]byte(payload))
 	}()
 
-	// Connect to the receiver as a KDE Connect "sender".
-	conn, err := tls.Dial("tcp", "127.0.0.1:"+strconv.Itoa(r.port), senderTLSConfig(t))
+	// Connect to the receiver as a KDE Connect "sender" (same cert).
+	conn, err := tls.Dial("tcp", "127.0.0.1:"+strconv.Itoa(r.port), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -158,18 +159,23 @@ func TestWebReceiverEndToEnd(t *testing.T) {
 	}
 	defer wr.close()
 
+	// HTTPS-only server: a plaintext client must be unusable for the test.
+	client := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // self-signed test server
+	}}
+	base := "https://127.0.0.1:" + itoa(wr.port)
+
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
 	fw, _ := mw.CreateFormFile("files", "from-phone.txt")
 	fw.Write([]byte("hello from the phone"))
 	mw.Close()
 
-	req, _ := http.NewRequest(http.MethodPost,
-		"http://127.0.0.1:"+itoa(wr.port)+"/upload", &body)
+	req, _ := http.NewRequest(http.MethodPost, base+"/upload", &body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set(tokenHeader, wr.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,14 +196,22 @@ func TestWebReceiverEndToEnd(t *testing.T) {
 	}
 
 	// A request with no token must be rejected by the real server too.
-	noTok, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+itoa(wr.port)+"/", nil)
-	r2, err := http.DefaultClient.Do(noTok)
+	noTok, _ := http.NewRequest(http.MethodGet, base+"/", nil)
+	r2, err := client.Do(noTok)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r2.Body.Close()
 	if r2.StatusCode != http.StatusForbidden {
 		t.Errorf("index without token = %d, want 403", r2.StatusCode)
+	}
+
+	// Plain HTTP to the HTTPS port must NOT serve the API.
+	if hresp, herr := http.Get("http://127.0.0.1:" + itoa(wr.port) + "/?t=" + wr.token); herr == nil {
+		if hresp.StatusCode == http.StatusOK {
+			t.Error("plain HTTP must not serve the upload page")
+		}
+		hresp.Body.Close()
 	}
 }
 
@@ -216,7 +230,7 @@ func TestClampUploadName(t *testing.T) {
 
 func TestPhoneReceiveURL(t *testing.T) {
 	url := phoneReceiveURL(53201, "tok123")
-	if !strings.HasPrefix(url, "http://") || !strings.Contains(url, ":53201/?t=tok123") {
-		t.Errorf("unexpected URL: %q", url)
+	if !strings.HasPrefix(url, "https://") || !strings.Contains(url, ":53201/?t=tok123") {
+		t.Errorf("unexpected URL (must be https): %q", url)
 	}
 }

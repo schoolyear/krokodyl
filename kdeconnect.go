@@ -25,13 +25,14 @@ import (
 // simplified to the same human-accept consent as every other krokodyl receive
 // path (the nearby:offer prompt); persistent per-device cert trust is a TODO.
 //
-// SECURITY — DO NOT enable this build tag in a release until the payload TLS
-// connection pins the paired device's certificate. Today it uses
-// InsecureSkipVerify (no pinning), which is open to a MITM on the LAN. KDE
-// Connect's real security is the pairing step that records and pins each
-// device's cert; that pairing is not yet implemented here. This is acceptable
-// ONLY because the tag is off in shipped builds and exists for hardware
-// bring-up, where it must be finished before any production use.
+// SECURITY: the payload TLS connection is pinned to the exact certificate the
+// peer presents on the control connection (same device serves both), so a
+// third party cannot MITM the payload port — no blanket InsecureSkipVerify.
+// What's still missing for full parity with the real app is PERSISTENT device
+// pairing: we currently trust-on-first-use whoever connects (the control conn
+// accepts any client cert) rather than verifying against a previously-paired,
+// stored cert. That's why the tag stays off by default — finish persistent
+// pairing + validate against the KDE Connect app before shipping it enabled.
 
 const kdeBuildEnabled = true
 
@@ -136,6 +137,24 @@ func (r *kdeConnectReceiver) handle(conn net.Conn) {
 	// without a deadline a peer that connects and stalls leaks this goroutine.
 	_ = conn.SetDeadline(time.Now().Add(kcConnTimeout))
 
+	// Capture the cert the peer presents on this control connection (KDE
+	// Connect requires a client cert). The payload connection is pinned to the
+	// SAME cert — the same device serves both — so a third party can't MITM the
+	// payload port. This replaces the old blanket InsecureSkipVerify.
+	tc, ok := conn.(*tls.Conn)
+	if !ok {
+		return
+	}
+	if err := tc.Handshake(); err != nil {
+		return
+	}
+	peerCerts := tc.ConnectionState().PeerCertificates
+	if len(peerCerts) == 0 {
+		logrus.Warn("kdeconnect: peer presented no certificate; refusing")
+		return
+	}
+	peerFP := certFingerprint(peerCerts[0].Raw)
+
 	if line, err := encodeKCPacket(kcPacketIdentity, r.identity); err == nil {
 		if _, err := conn.Write(line); err != nil {
 			return
@@ -156,12 +175,12 @@ func (r *kdeConnectReceiver) handle(conn net.Conn) {
 				peerName = id.DeviceName
 			}
 		case kcPacketShareReq:
-			r.handleShare(p, conn, peerName, peerHost)
+			r.handleShare(p, peerName, peerHost, peerFP)
 		}
 	}
 }
 
-func (r *kdeConnectReceiver) handleShare(p kcPacket, conn net.Conn, peerName, peerHost string) {
+func (r *kdeConnectReceiver) handleShare(p kcPacket, peerName, peerHost, peerFP string) {
 	share, err := parseKCShareRequest(p)
 	if err != nil {
 		return
@@ -174,16 +193,15 @@ func (r *kdeConnectReceiver) handleShare(p kcPacket, conn net.Conn, peerName, pe
 		return
 	}
 
-	// Payload arrives on a separate TLS socket on the sender at the advertised
-	// port. Connect, read exactly payloadSize bytes, save.
+	// Payload arrives on a separate TLS socket on the sender. Pin it to the
+	// cert the peer presented on the control connection — same device, so any
+	// other cert is a MITM and is rejected.
 	payAddr := net.JoinHostPort(peerHost, strconv.Itoa(share.PayloadInfo.Port))
 	payConn, err := tls.Dial("tcp", payAddr, &tls.Config{
-		Certificates: []tls.Certificate{r.tlsCert},
-		// INSECURE / GATED: no cert pinning yet — see the SECURITY note at the
-		// top of this file. Must be replaced with paired-device cert
-		// verification before this tag ships enabled.
-		InsecureSkipVerify: true, //nolint:gosec // gated bring-up only
-		MinVersion:         tls.VersionTLS12,
+		Certificates:          []tls.Certificate{r.tlsCert},
+		InsecureSkipVerify:    true, //nolint:gosec // self-signed; pinned to the control-conn cert below
+		VerifyPeerCertificate: pinFingerprint(peerFP),
+		MinVersion:            tls.VersionTLS12,
 	})
 	if err != nil {
 		logrus.WithError(err).Warn("kdeconnect: could not open payload connection")
