@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -38,17 +39,19 @@ var (
 func newBLERadio() bleRadio { return &tinygoBLE{} }
 
 type tinygoBLE struct {
+	once    sync.Once
 	enabled bool
 }
 
+// ensure enables the adapter exactly once. sync.Once makes it safe to call
+// from the frontend goroutine (available()) concurrently with host()/join().
 func (b *tinygoBLE) ensure() error {
-	if b.enabled {
-		return nil
+	b.once.Do(func() {
+		b.enabled = bluetooth.DefaultAdapter.Enable() == nil
+	})
+	if !b.enabled {
+		return fmt.Errorf("%w: could not enable BLE adapter", errBLEUnavailable)
 	}
-	if err := bluetooth.DefaultAdapter.Enable(); err != nil {
-		return fmt.Errorf("enable BLE adapter: %w", err)
-	}
-	b.enabled = true
 	return nil
 }
 
@@ -133,6 +136,11 @@ func (b *tinygoBLE) join(stop <-chan struct{}, self bleHandshake) (bleHandshake,
 	}
 	adapter := bluetooth.DefaultAdapter
 
+	// StopScan from inside the callback is the documented-safe call site; it
+	// makes Scan() return so the goroutine exits. The stop/timeout branches
+	// below also call StopScan to unblock it. (Not WaitGroup-joined: the gated
+	// driver isn't retried in a tight loop, but a future auto-retry loop should
+	// coordinate this — hardware-validation TODO.)
 	resultCh := make(chan bluetooth.ScanResult, 1)
 	go func() {
 		_ = adapter.Scan(func(a *bluetooth.Adapter, res bluetooth.ScanResult) {
@@ -164,12 +172,18 @@ func (b *tinygoBLE) join(stop <-chan struct{}, self bleHandshake) (bleHandshake,
 	defer device.Disconnect()
 
 	services, err := device.DiscoverServices([]bluetooth.UUID{bleServiceUUID})
-	if err != nil || len(services) == 0 {
+	if err != nil {
 		return bleHandshake{}, fmt.Errorf("ble discover service: %w", err)
 	}
+	if len(services) == 0 {
+		return bleHandshake{}, fmt.Errorf("ble: krokodyl service not found on peer")
+	}
 	chars, err := services[0].DiscoverCharacteristics([]bluetooth.UUID{bleHandshakeCharUUID})
-	if err != nil || len(chars) == 0 {
+	if err != nil {
 		return bleHandshake{}, fmt.Errorf("ble discover characteristic: %w", err)
+	}
+	if len(chars) == 0 {
+		return bleHandshake{}, fmt.Errorf("ble: handshake characteristic not found on peer")
 	}
 
 	buf := make([]byte, maxHandshakeBytes)

@@ -100,7 +100,9 @@
     "copy_code": "Copier le code de transfert {code}",
     "theme_dark": "Passer au thème sombre",
     "theme_light": "Passer au thème clair",
-    "language": "Langue"
+    "language": "Langue",
+    "copy_ssid": "Copier le nom du reseau {value}",
+    "copy_psk": "Copier le mot de passe {value}"
   },
   "verify": {
     "title": "Les fichiers reçus ne correspondent pas à l'offre",
@@ -148,6 +150,7 @@
         "join_1": "Ouvrez le menu Wi-Fi et connectez-vous au reseau de l'hote ci-dessus.",
         "join_2": "Saisissez le mot de passe ci-dessus ; krokodyl detectera l'autre appareil."
       }
-    }
+    },
+    "load_failed": "Impossible de charger les details de la connexion hors ligne."
   }
 }

@@ -100,7 +100,9 @@
     "copy_code": "Copiar el código de transferencia {code}",
     "theme_dark": "Cambiar al tema oscuro",
     "theme_light": "Cambiar al tema claro",
-    "language": "Idioma"
+    "language": "Idioma",
+    "copy_ssid": "Copiar el nombre de red {value}",
+    "copy_psk": "Copiar la contrasena {value}"
   },
   "verify": {
     "title": "Los archivos recibidos no coinciden con la oferta",
@@ -148,6 +150,7 @@
         "join_1": "Abre el menu Wi-Fi y conectate a la red del anfitrion indicada arriba.",
         "join_2": "Introduce la contrasena de arriba; krokodyl detectara el otro dispositivo."
       }
-    }
+    },
+    "load_failed": "No se pudieron cargar los datos de la conexion sin conexion."
   }
 }

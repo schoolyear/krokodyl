@@ -85,6 +85,32 @@ func TestDecodeHandshakeRejects(t *testing.T) {
 	}
 }
 
+func TestDecodeHandshakeRejectsUnsafeCredentials(t *testing.T) {
+	mk := func(ssid, psk string) []byte {
+		data, _ := encodeHandshake(bleHandshake{Version: handshakeVersion, DeviceID: "m1", Name: "x", Role: roleJoin, SSID: ssid, PSK: psk})
+		return data
+	}
+	tests := []struct {
+		name      string
+		ssid, psk string
+	}{
+		{"short PSK", "krokodyl-otter", "short"},
+		{"control char in PSK", "krokodyl-otter", "good-pass\n-inject"},
+		{"control char in SSID", "krokodyl\r\notter", "valid-password"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := decodeHandshake(mk(tt.ssid, tt.psk)); err == nil {
+				t.Errorf("expected rejection for %s", tt.name)
+			}
+		})
+	}
+	// A valid SSID + WPA2-length PSK must still pass.
+	if _, err := decodeHandshake(mk("krokodyl-otter", "brave-otter-vivid")); err != nil {
+		t.Errorf("valid credentials wrongly rejected: %v", err)
+	}
+}
+
 func TestDecodeHandshakeSanitizesName(t *testing.T) {
 	h := bleHandshake{DeviceID: "m1", Name: "evil\r\n\x1b[31mX‮spoof", Role: roleHost}
 	data, _ := encodeHandshake(h)

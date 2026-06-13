@@ -114,6 +114,14 @@ func hotspotJoinCommands(creds hotspotCredentials) (cmds []osCommand, automatabl
 // text plus the SSID/PSK. Keeping this as keys (not prose) preserves the
 // six-locale contract.
 func hotspotManualSteps(role pairingRole) []string {
+	// Only these OSes have localized step keys; anything else (an exotic GOOS)
+	// falls back to the generic instruction rather than emitting a key with no
+	// locale entry (which would render as a raw id).
+	switch runtime.GOOS {
+	case "windows", "linux", "darwin":
+	default:
+		return []string{"offline.manual.generic"}
+	}
 	base := "offline.manual." + runtime.GOOS + "."
 	switch role {
 	case roleHost:

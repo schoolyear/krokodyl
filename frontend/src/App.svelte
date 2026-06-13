@@ -381,7 +381,7 @@
       offlineGuidance = await GetOfflineGuidance();
     } catch (error) {
       console.error('Could not load offline guidance', error);
-      showToast($_('offline.title'), 'error');
+      showToast($_('offline.load_failed'), 'error');
     }
   }
 
@@ -593,7 +593,7 @@
               </ul>
             {/if}
             <button class="offline-cta" onclick={openOffline}>
-              📡 {$_('offline.cta')}
+              <span aria-hidden="true">📡</span> {$_('offline.cta')}
             </button>
           </div>
 
@@ -837,20 +837,20 @@
     <div class="modal offline-modal" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title" use:modalDialog={() => offlineGuidance = null}>
       <h2 id="offline-modal-title">{$_('offline.title')}</h2>
       <p>{$_('offline.subtitle')}</p>
-      <p class="offline-ble-note" role="status">
+      <p class="offline-ble-note">
         {offlineGuidance.bluetoothAvailable ? $_('offline.ble_available') : $_('offline.ble_unavailable')}
       </p>
 
       <div class="offline-creds">
         <div>
           <span class="offline-cred-label">{$_('offline.ssid_label')}</span>
-          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.ssid)} aria-label={$_('a11y.copy_code', { values: { code: offlineGuidance.ssid } })} title={$_('transfer.copy_prompt')}>
+          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.ssid)} aria-label={$_('a11y.copy_ssid', { values: { value: offlineGuidance.ssid } })} title={$_('transfer.copy_prompt')}>
             {offlineGuidance.ssid} <span aria-hidden="true">⧉</span>
           </button>
         </div>
         <div>
           <span class="offline-cred-label">{$_('offline.psk_label')}</span>
-          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.psk)} aria-label={$_('a11y.copy_code', { values: { code: offlineGuidance.psk } })} title={$_('transfer.copy_prompt')}>
+          <button class="offline-cred-value" onclick={() => offlineGuidance && copyToClipboard(offlineGuidance.psk)} aria-label={$_('a11y.copy_psk', { values: { value: offlineGuidance.psk } })} title={$_('transfer.copy_prompt')}>
             {offlineGuidance.psk} <span aria-hidden="true">⧉</span>
           </button>
         </div>

@@ -100,7 +100,9 @@
     "copy_code": "Copy transfer code {code}",
     "theme_dark": "Switch to dark theme",
     "theme_light": "Switch to light theme",
-    "language": "Language"
+    "language": "Language",
+    "copy_ssid": "Copy network name {value}",
+    "copy_psk": "Copy password {value}"
   },
   "verify": {
     "title": "Received files don't match the offer",
@@ -148,6 +150,7 @@
         "join_1": "Open the Wi-Fi menu and connect to the host's network shown above.",
         "join_2": "Enter the password above; krokodyl will detect the other device."
       }
-    }
+    },
+    "load_failed": "Could not load the offline connection details."
   }
 }

@@ -50,7 +50,6 @@ func (c *compositeDiscovery) start(registry *peerRegistry, onState func(Discover
 
 	stops := make([]func(), 0, len(c.sources))
 	for i, src := range c.sources {
-		i := i
 		logrus.Debugf("discovery: starting source %q", src.label())
 		stops = append(stops, src.start(registry, func(st DiscoveryState) {
 			mu.Lock()

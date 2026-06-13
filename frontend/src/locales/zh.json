@@ -100,7 +100,9 @@
     "copy_code": "复制传输代码 {code}",
     "theme_dark": "切换到深色主题",
     "theme_light": "切换到浅色主题",
-    "language": "语言"
+    "language": "语言",
+    "copy_ssid": "复制网络名称 {value}",
+    "copy_psk": "复制密码 {value}"
   },
   "verify": {
     "title": "收到的文件与提议不符",
@@ -148,6 +150,7 @@
         "join_1": "打开 Wi-Fi 菜单，连接到上方所示的主机网络。",
         "join_2": "输入上方的密码；krokodyl 将检测到另一台设备。"
       }
-    }
+    },
+    "load_failed": "无法加载离线连接详情。"
   }
 }

@@ -24,10 +24,11 @@ const (
 	// handshakeVersion guards against two builds with incompatible payloads
 	// silently mis-parsing each other.
 	handshakeVersion = 1
-	// Sanity cap on the handshake blob. The negotiated BLE ATT MTU is often
-	// smaller than this, so the radio layer (nearbyble.go) chunks the payload
-	// across sequential writes and reassembles by length prefix — this bound
-	// just stops a malformed/hostile peer from forcing unbounded buffering.
+	// Sanity cap on the handshake blob, and the bound a malformed/hostile peer
+	// is held to. The radio layer must deliver the whole blob within the
+	// negotiated BLE ATT MTU (the gated tinygo driver requires an MTU large
+	// enough for one write; MTU-fragmenting reassembly is a documented
+	// hardware-validation TODO, not yet implemented).
 	maxHandshakeBytes = 1024
 	maxSSIDLen        = 32 // 802.11 SSID
 	maxPSKLen         = 63 // WPA2-PSK max (8 min enforced on host generation)
@@ -45,6 +46,17 @@ const (
 
 func (r pairingRole) valid() bool {
 	return r == roleUndecided || r == roleHost || r == roleJoin
+}
+
+// hasControlChars reports whether s contains any ASCII control character
+// (C0 range or DEL) — rejected in fields that flow into OS commands.
+func hasControlChars(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // bleHandshake is exchanged over the BLE control characteristic. Short JSON
@@ -100,8 +112,18 @@ func decodeHandshake(payload []byte) (bleHandshake, error) {
 	if len(h.SSID) > maxSSIDLen {
 		return h, fmt.Errorf("handshake SSID too long")
 	}
-	if len(h.PSK) > maxPSKLen {
-		return h, fmt.Errorf("handshake PSK too long")
+	// SSID/PSK are untrusted radio input that flow into OS command arguments;
+	// reject control characters so nothing odd reaches the hotspot tooling.
+	if h.SSID != "" && hasControlChars(h.SSID) {
+		return h, fmt.Errorf("handshake SSID has control characters")
+	}
+	if h.PSK != "" {
+		if len(h.PSK) < minPSKLen || len(h.PSK) > maxPSKLen {
+			return h, fmt.Errorf("handshake PSK length %d outside WPA2 range %d-%d", len(h.PSK), minPSKLen, maxPSKLen)
+		}
+		if hasControlChars(h.PSK) {
+			return h, fmt.Errorf("handshake PSK has control characters")
+		}
 	}
 	if h.ControlPort < 0 || h.ControlPort > 65535 {
 		return h, fmt.Errorf("handshake has invalid control port %d", h.ControlPort)
@@ -118,6 +140,9 @@ func decodeHandshake(payload []byte) (bleHandshake, error) {
 		return h, fmt.Errorf("handshake code too long")
 	}
 	if len(h.Name) > maxPeerNameLen {
+		// Slice by bytes then repair: a multi-byte rune split at the boundary
+		// is dropped by ToValidUTF8 so the clamped name is never invalid UTF-8
+		// (same approach as discovery.go's multicast name handling).
 		h.Name = strings.ToValidUTF8(h.Name[:maxPeerNameLen], "")
 	}
 	h.Name = sanitizeDisplayName(h.Name)

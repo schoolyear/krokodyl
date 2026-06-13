@@ -100,7 +100,9 @@
     "copy_code": "Kopieer transfercode {code}",
     "theme_dark": "Schakel naar donker thema",
     "theme_light": "Schakel naar licht thema",
-    "language": "Taal"
+    "language": "Taal",
+    "copy_ssid": "Kopieer netwerknaam {value}",
+    "copy_psk": "Kopieer wachtwoord {value}"
   },
   "verify": {
     "title": "Ontvangen bestanden komen niet overeen met het aanbod",
@@ -148,6 +150,7 @@
         "join_1": "Open het wifi-menu en verbind met het netwerk van de host hierboven.",
         "join_2": "Voer het wachtwoord hierboven in; krokodyl detecteert het andere apparaat."
       }
-    }
+    },
+    "load_failed": "Kan de offline verbindingsgegevens niet laden."
   }
 }

@@ -100,7 +100,9 @@
     "copy_code": "Átviteli kód másolása: {code}",
     "theme_dark": "Váltás sötét témára",
     "theme_light": "Váltás világos témára",
-    "language": "Nyelv"
+    "language": "Nyelv",
+    "copy_ssid": "Halozat nevenek masolasa: {value}",
+    "copy_psk": "Jelszo masolasa: {value}"
   },
   "verify": {
     "title": "A kapott fájlok nem egyeznek az ajánlattal",
@@ -148,6 +150,7 @@
         "join_1": "Nyisd meg a Wi-Fi menut, es csatlakozz a fenti gazdahalozathoz.",
         "join_2": "Add meg a fenti jelszot; a krokodyl eszleli a masik eszkozt."
       }
-    }
+    },
+    "load_failed": "Nem sikerult betolteni az offline kapcsolat adatait."
   }
 }

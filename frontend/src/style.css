@@ -52,8 +52,9 @@
   --color-primary-soft: rgba(14, 159, 110, 0.1);
   --color-primary-strong: #0E8050;
   --color-primary-strong-hover: #0B6B43;
-  /* Light surfaces need the darker green for AA-passing green text. */
-  --color-accent-text: #0E8050;
+  /* Darker green so green TEXT clears AA (4.5:1) on every light surface it
+     lands on — incl. the off-white --color-bg and --color-bg-lighter chips. */
+  --color-accent-text: #0C7245;
   --color-danger-strong: #DC2626;
   --color-green: #059669;
   /* Darker amber: passes 4.5:1 as text on the white light-theme surface. */
