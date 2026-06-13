@@ -434,35 +434,101 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 // no longer stops it. Kept as an explicit override if ever needed.
 func (a *App) StopPhoneReceive() { a.stopReceiving() }
 
+// uploadPageHTML is a self-contained, mobile-first upload page (no external
+// assets — it is served over the LAN on a self-signed cert). %[1]s is the
+// upload token, embedded for the X-Krokodyl-Token header on the POST. All
+// literal percent signs are doubled for fmt.
 const uploadPageHTML = `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <title>Send to krokodyl</title>
 <style>
- body{font-family:system-ui,sans-serif;margin:0;padding:1.5rem;background:#101315;color:#E9EDF0}
- h1{font-size:1.25rem}
- .card{max-width:30rem;margin:0 auto}
- input[type=file]{display:block;width:100%%;margin:1rem 0;padding:1rem;background:#181C1F;border:1px dashed #323B43;border-radius:.5rem;color:#E9EDF0}
- button{width:100%%;padding:.9rem;font-size:1rem;font-weight:700;border:0;border-radius:.5rem;background:#0E8050;color:#fff}
- #status{margin-top:1rem;font-weight:700}
+ :root{--bg:#0F1213;--surface:#181C1F;--surface2:#212629;--border:#323B43;--text:#E9EDF0;--dim:#9AA7AE;--accent:#0E8050;--accent-h:#0B6B43;--accent-t:#2FBF8F}
+ *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+ html,body{margin:0}
+ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left))}
+ .wrap{width:100%%;max-width:32rem;margin:0 auto;flex:1;display:flex;flex-direction:column;gap:1.1rem}
+ header{display:flex;align-items:center;gap:.65rem;padding:.4rem 0 .2rem}
+ .logo{font-size:1.7rem;line-height:1}
+ h1{font-size:1.15rem;margin:0;font-weight:700;letter-spacing:-.01em}
+ .sub{margin:.12rem 0 0;font-size:.78rem;color:var(--dim)}
+ .drop{flex:1;min-height:38vh;border:2px dashed var(--border);border-radius:18px;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.55rem;text-align:center;padding:1.5rem;cursor:pointer;transition:border-color .15s,background .15s}
+ .drop.over,.drop:active{border-color:var(--accent-t);background:var(--surface2)}
+ .drop .ico{font-size:2.6rem;line-height:1}
+ .drop .big{font-weight:700;font-size:1.05rem}
+ .drop .small{font-size:.8rem;color:var(--dim)}
+ input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+ .files{display:flex;flex-direction:column;gap:.5rem}
+ .file{display:flex;align-items:center;gap:.65rem;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:.6rem .7rem}
+ .file .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem}
+ .file .sz{font-size:.74rem;color:var(--dim);flex-shrink:0}
+ .file .rm{background:none;border:0;color:var(--dim);font-size:1.15rem;line-height:1;padding:.3rem .45rem;cursor:pointer;flex-shrink:0;min-height:36px;min-width:36px}
+ .foot{position:sticky;bottom:0;display:flex;flex-direction:column;gap:.55rem;padding-top:.3rem;background:linear-gradient(to top,var(--bg) 70%%,transparent)}
+ .bar{height:8px;background:var(--surface2);border-radius:99px;overflow:hidden;display:none}
+ .bar>i{display:block;height:100%%;width:0;background:var(--accent-t);transition:width .12s}
+ .status{text-align:center;font-weight:600;font-size:.88rem;min-height:1.15rem}
+ .status.ok{color:var(--accent-t)}
+ .status.err{color:#ff6b5e}
+ .send{width:100%%;padding:1rem;font-size:1.05rem;font-weight:700;border:0;border-radius:14px;background:var(--accent);color:#fff;cursor:pointer;min-height:54px}
+ .send:active:not(:disabled){background:var(--accent-h)}
+ .send:disabled{opacity:.45;cursor:default}
 </style></head>
-<body><div class="card">
- <h1>🐊 Send to krokodyl</h1>
- <form id="f" method="post" enctype="multipart/form-data">
-   <input type="file" name="files" multiple required>
-   <button type="submit">Send</button>
- </form>
- <div id="status" role="status" aria-live="polite"></div>
+<body>
+ <div class="wrap">
+  <header>
+   <span class="logo" aria-hidden="true">🐊</span>
+   <div><h1>Send to krokodyl</h1><p class="sub">Files arrive in the computer's downloads.</p></div>
+  </header>
+  <label class="drop" id="drop" for="pick">
+   <span class="ico" aria-hidden="true">📤</span>
+   <span class="big">Tap to choose files</span>
+   <span class="small">or drag &amp; drop them here</span>
+  </label>
+  <input id="pick" type="file" multiple>
+  <div class="files" id="list"></div>
+  <div class="foot">
+   <div class="bar" id="bar"><i id="fill"></i></div>
+   <div class="status" id="status" role="status" aria-live="polite"></div>
+   <button class="send" id="send" disabled>Send</button>
+  </div>
+ </div>
  <script>
   var TOKEN='%[1]s';
-  var f=document.getElementById('f'),s=document.getElementById('status');
-  f.addEventListener('submit',function(e){
-    e.preventDefault();s.textContent='Sending…';
-    fetch('/upload',{method:'POST',headers:{'X-Krokodyl-Token':TOKEN},body:new FormData(f)})
-      .then(function(r){return r.ok?r.text():Promise.reject(r.status)})
-      .then(function(t){s.textContent='✅ '+t})
-      .catch(function(){s.textContent='❌ Upload failed'});
+  var pick=document.getElementById('pick'),drop=document.getElementById('drop'),list=document.getElementById('list'),send=document.getElementById('send'),status=document.getElementById('status'),bar=document.getElementById('bar'),fill=document.getElementById('fill');
+  var files=[];
+  function sz(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(0)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';}
+  function render(){
+   list.innerHTML='';
+   files.forEach(function(f,i){
+    var r=document.createElement('div');r.className='file';
+    var n=document.createElement('span');n.className='nm';n.textContent=f.name;
+    var s=document.createElement('span');s.className='sz';s.textContent=sz(f.size);
+    var b=document.createElement('button');b.className='rm';b.textContent='✕';b.setAttribute('aria-label','Remove '+f.name);
+    b.onclick=function(e){e.preventDefault();files.splice(i,1);render();};
+    r.appendChild(n);r.appendChild(s);r.appendChild(b);list.appendChild(r);
+   });
+   send.disabled=files.length===0;
+   send.textContent=files.length?('Send '+files.length+' file'+(files.length>1?'s':'')):'Send';
+  }
+  pick.addEventListener('change',function(){for(var i=0;i<pick.files.length;i++)files.push(pick.files[i]);pick.value='';render();});
+  ['dragenter','dragover'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.add('over');});});
+  ['dragleave','dragend','drop'].forEach(function(ev){drop.addEventListener(ev,function(e){e.preventDefault();drop.classList.remove('over');});});
+  drop.addEventListener('drop',function(e){var dt=e.dataTransfer;if(dt&&dt.files)for(var i=0;i<dt.files.length;i++)files.push(dt.files[i]);render();});
+  send.addEventListener('click',function(){
+   if(!files.length)return;
+   var fd=new FormData();files.forEach(function(f){fd.append('files',f,f.name);});
+   var x=new XMLHttpRequest();x.open('POST','/upload');x.setRequestHeader('X-Krokodyl-Token',TOKEN);
+   send.disabled=true;bar.style.display='block';fill.style.width='0';status.className='status';status.textContent='Sending…';
+   x.upload.onprogress=function(e){if(e.lengthComputable)fill.style.width=(e.loaded/e.total*100)+'%%';};
+   x.onload=function(){
+    bar.style.display='none';fill.style.width='0';
+    if(x.status===200){status.className='status ok';status.textContent='✅ Sent — you can send more';files=[];render();}
+    else{status.className='status err';status.textContent='❌ Failed ('+x.status+')';send.disabled=false;}
+   };
+   x.onerror=function(){bar.style.display='none';status.className='status err';status.textContent='❌ Connection lost';send.disabled=false;};
+   x.send(fd);
   });
  </script>
-</div></body></html>`
+</body></html>`
