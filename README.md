@@ -12,6 +12,7 @@ A small, AirDrop-style **peer-to-peer file transfer** desktop app. Drop files, s
 
 - **Code transfer** — share a short human code; works on the same LAN or across networks.
 - **Nearby devices** — AirDrop-style discovery on the local network; send with no code, just pick a device. What arrives is checked against what was offered — a mismatch asks you before anything is kept.
+- **No network? Connect directly** — in the field with no internet *and* no shared Wi-Fi, the "Connect directly" guide walks you through creating a one-off hotspot between the two devices; once they share that network the normal nearby + transfer flow takes over at full Wi-Fi speed. (Automatic Bluetooth pairing — which hands the hotspot credentials over for you — is implemented behind a build flag and pending on-hardware validation; see *Offline mode* below.)
 - **Resilient transfers** — survives Wi-Fi drops: stall detection, auto-reconnect, and **resume from where it left off** (the progress bar continues instead of restarting).
 - **Big files** — streamed and chunked; no practical size cap.
 - **Resend** — repeat a past transfer to the same device in one click (remembers the device even if it renamed); you confirm the target's name and address before anything is sent.
@@ -24,6 +25,16 @@ A small, AirDrop-style **peer-to-peer file transfer** desktop app. Drop files, s
 - **Nearby control channel** is TLS 1.3, pinned to the certificate fingerprint each device announces — and because LAN announcements are inherently unauthenticated, every consequential action keeps a human in the loop: you accept offers, confirm resend targets, and approve any received content that doesn't match the offer.
 - **Untrusted input is sanitized and contained**: sender-supplied file names are validated against path traversal (including Windows device names and NTFS tricks), display names are stripped of control and BiDi-spoofing characters, and wire messages are size-capped with per-source rate limiting.
 - Settings and history are stored owner-only (0600); transfer codes are never logged or persisted.
+
+## Offline mode (no internet, no shared network)
+
+krokodyl normally finds peers over the local network and transfers via croc — both of which need a shared IP network. When there isn't one (a field with no internet and no Wi-Fi), **"Connect directly"** bridges the gap:
+
+1. Bluetooth Low Energy discovers the other device and carries a tiny handshake — **never the file bytes** (croc is TCP/IP and Bluetooth bulk transfer is far too slow for the big-file promise).
+2. One device hosts a Wi-Fi hotspot; its credentials travel over that handshake.
+3. The other joins, and the **normal nearby + croc transfer** runs over the hotspot at full Wi-Fi speed.
+
+What ships today is the **guided** path: the app generates a network name + password and shows per-OS steps to create/join the hotspot manually, then transfers as usual. The **automatic** Bluetooth handoff is implemented but compiled out by default (`-tags krokodyl_ble`) until it's validated on real two-machine hardware — so release binaries never depend on an unverified radio path. Note: macOS can only *join* over Bluetooth (it cannot advertise), and hotspot creation is scriptable on Windows/Linux but manual on macOS.
 
 ## Installation
 
@@ -78,6 +89,7 @@ wails build -platform linux/amd64 -tags webkit2_41
 go test -race ./...                          # full Go test gate (every source file has a _test.go sibling)
 go test -race -run TestName ./...            # a single test
 gofmt -w . && go vet ./...                   # format + static analysis
+go build -tags krokodyl_ble ./...            # also compile the gated Bluetooth radio (off in shipped builds)
 
 cd frontend && npm install && npm run check  # svelte-check: TypeScript + accessibility gate (expect 0/0)
 ```

@@ -22,6 +22,7 @@ cd frontend && npm run check                # svelte-check — TYPE + A11Y gate;
 cd frontend && npm run build                # frontend-only build
 
 gofmt -w . && go vet ./...                  # format + static-check gate (run before commit / go-review)
+go build -tags krokodyl_ble ./...           # compile the gated Bluetooth radio — also part of the gate
 
 go build -ldflags "-X main.buildStamp=<hash>"   # inject build identifier (default "dev")
 go run . --transfer-worker                  # run a transfer worker standalone (reads one JSON job on stdin) — debugging aid
@@ -47,6 +48,8 @@ go run . --transfer-worker                  # run a transfer worker standalone (
 **Persistence** (settings.go, history.go). `settings.json` + `history.json` in the OS config dir, mode `0o600`. A stable per-install `MachineID` (UUID) lets the resend feature re-target the same device across renames. History caps at 50 terminal entries with transfer codes stripped. `historyMu` serializes disk writes; `sweepPartials` only deletes dirs whose basename starts with `partialDirPrefix` (defense against tampered settings).
 
 **Frontend** (frontend/src). Svelte 5 **runes** (`$state`/`$derived`) — most UI lives in one large `App.svelte`. Backend calls go through generated `wailsjs/` bindings; live updates arrive via `EventsOn` (`transfer:updated`, `transfer:overwrite`, `transfer:verify`, `nearby:updated`, `nearby:state`, `nearby:offer`, `transfer:cleared`). Blocking user prompts (overwrite, verify) are keyed by per-prompt UUID through `registerOverwritePrompt`/`resolveOverwrite` — reuse that plumbing for new prompts. svelte-i18n with 6 locales (en/nl/fr/es/hu/zh), theme store persisted to localStorage, `TitleBar.svelte` renders native Windows chrome + macOS traffic-light padding.
+
+**Offline Nearby-Direct** (no-network transfer). `discoverysource.go` defines a `discoverySource` seam feeding `peerRegistry.observe` — multicast is one source, Bluetooth another; downstream (control channel + croc) never knows how a peer was found. `nearbydirect.go` is the hardware-free core (handshake codec, `resolveRole` host/join negotiation, `offlineSession` state machine — all unit-tested). **Bytes never cross Bluetooth** (croc is TCP/IP; BLE bulk is far too slow): BLE only carries discovery + a small handshake, then one device hosts a Wi-Fi hotspot (`hotspot.go`) whose credentials ride the handshake and the existing nearby+croc transfer runs over it. The real BLE radio (`nearbyble_on.go`, tinygo/bluetooth) is behind **`//go:build krokodyl_ble`** — OFF by default, so shipped builds never compile the Bluetooth dep or an unvalidated radio path; the default build is a no-op radio that degrades to guided manual hotspot pairing (`GetOfflineGuidance`). Constraints: **macOS BLE is central-only** (can't advertise → a Mac can only join); hotspot automation is per-OS (Windows/Linux scriptable, macOS guided manual); the handshake assumes one BLE write fits the negotiated MTU (chunking is a hardware-validation TODO). The radio + hotspot exec paths are **unvalidated without two machines + OS Bluetooth permission** — keep them gated and don't claim they work.
 
 ## Frontend conventions
 
