@@ -48,6 +48,11 @@ const (
 	// maxUploadNameLen bounds a sanitized filename so it can't exceed common
 	// filesystem limits (most cap a path component at 255 bytes).
 	maxUploadNameLen = 200
+	// maxConcurrentUploads caps simultaneous upload streams. The server is
+	// always-on while visible and bound on all interfaces, so even a valid token
+	// holder must not be able to open unbounded 50 GiB streams at once and
+	// exhaust disk/memory. A normal phone POSTs all files in one request.
+	maxConcurrentUploads = 8
 )
 
 // webReceiver owns the opt-in upload server. It is only listening between
@@ -58,6 +63,8 @@ type webReceiver struct {
 	token string
 	dest  string
 	port  int
+	// sem bounds concurrent upload streams (buffered to maxConcurrentUploads).
+	sem chan struct{}
 	// onFile is called after each file is fully written, with the actual name
 	// it was saved under, so the app can record a transfer and notify the UI.
 	onFile func(name string, size int64)
@@ -97,6 +104,7 @@ func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, erro
 		token:  hex.EncodeToString(tok),
 		dest:   dest,
 		port:   ln.Addr().(*net.TCPAddr).Port,
+		sem:    make(chan struct{}, maxConcurrentUploads),
 		onFile: onFile,
 	}
 
@@ -144,6 +152,16 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	if !wr.checkToken(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	// Bound concurrent streams: only token-authenticated requests reach here, so
+	// a slot is never consumed by an unauthenticated caller. Saturated => 429
+	// rather than block, so a flood can't pin connections open indefinitely.
+	select {
+	case wr.sem <- struct{}{}:
+		defer func() { <-wr.sem }()
+	default:
+		http.Error(w, "too many concurrent uploads", http.StatusTooManyRequests)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)

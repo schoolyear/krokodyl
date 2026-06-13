@@ -493,6 +493,12 @@ func (r *localSendReceiver) registerWith(host string, port int, fingerprint stri
 	if ip == nil || !ip.IsPrivate() {
 		return
 	}
+	// No announced fingerprint => no way to authenticate the peer's cert, so we
+	// will not open even a register-back to it. A conformant LocalSend v2 device
+	// always announces one over HTTPS; an empty field is non-conformant/suspect.
+	if fingerprint == "" {
+		return
+	}
 	body := r.self
 	body.Announce = false
 	data, _ := json.Marshal(body)
@@ -516,13 +522,14 @@ func (r *localSendReceiver) registerWith(host string, port int, fingerprint stri
 }
 
 // pinFingerprint verifies a presented self-signed cert against the SHA-256
-// fingerprint the peer announced (LocalSend's identity check). An empty
-// expected fingerprint (older/unknown peer) skips pinning rather than fail
-// discovery.
+// fingerprint the peer announced (LocalSend's identity check). It FAILS CLOSED:
+// an empty expected fingerprint is treated as "no identity to pin against" and
+// rejected, so this primitive can never silently yield an unauthenticated TLS
+// connection. Callers that have no fingerprint must not dial at all.
 func pinFingerprint(expected string) func([][]byte, [][]*x509.Certificate) error {
 	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 		if expected == "" {
-			return nil
+			return fmt.Errorf("no expected fingerprint to pin against")
 		}
 		if len(rawCerts) == 0 {
 			return fmt.Errorf("peer presented no certificate")

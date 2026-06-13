@@ -20,6 +20,7 @@ func newTestReceiver(t *testing.T) (*webReceiver, string) {
 	wr := &webReceiver{
 		token: "secret-token",
 		dest:  dir,
+		sem:   make(chan struct{}, maxConcurrentUploads),
 		onFile: func(name string, size int64) {
 			got = append(got, name)
 		},

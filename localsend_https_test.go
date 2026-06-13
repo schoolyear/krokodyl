@@ -64,10 +64,11 @@ func TestLocalSendHTTPSAndPinning(t *testing.T) {
 	}
 }
 
-func TestPinFingerprintEmptySkips(t *testing.T) {
-	// An empty expected fingerprint (unknown peer) skips pinning rather than
-	// breaking discovery.
-	if err := pinFingerprint("")([][]byte{{0x01}}, nil); err != nil {
-		t.Errorf("empty expected should skip, got %v", err)
+func TestPinFingerprintEmptyFailsClosed(t *testing.T) {
+	// An empty expected fingerprint must be REJECTED, not silently accepted:
+	// the primitive can never yield an unauthenticated TLS connection. Callers
+	// with no fingerprint are expected to not dial at all (see registerWith).
+	if err := pinFingerprint("")([][]byte{{0x01}}, nil); err == nil {
+		t.Error("empty expected fingerprint must fail closed, but it was accepted")
 	}
 }
