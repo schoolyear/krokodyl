@@ -162,6 +162,7 @@
     "same_network": "你在手机上选择的文件会保存到你的下载文件夹。",
     "qr_alt": "指向 krokodyl 上传页面的二维码",
     "close": "停止接收",
-    "failed": "无法启动从手机接收。"
+    "failed": "无法启动从手机接收。",
+    "localsend_note": "也可在 LocalSend 应用中发现——在那里选择 krokodyl 即可无需扫码发送。"
   }
 }

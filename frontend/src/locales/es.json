@@ -162,6 +162,7 @@
     "same_network": "Los archivos que elijas en el telefono llegan a tu carpeta de descargas.",
     "qr_alt": "Codigo QR a la pagina de subida de krokodyl",
     "close": "Dejar de recibir",
-    "failed": "No se pudo iniciar la recepcion desde el telefono."
+    "failed": "No se pudo iniciar la recepcion desde el telefono.",
+    "localsend_note": "Tambien visible en la app LocalSend — elige krokodyl alli para enviar sin escanear."
   }
 }

@@ -162,6 +162,7 @@
     "same_network": "A telefonon kivalasztott fajlok a letoltesi mappadba erkeznek.",
     "qr_alt": "QR-kod a krokodyl feltoltesi oldalra",
     "close": "Fogadas leallitasa",
-    "failed": "Nem sikerult elinditani a fogadast telefonrol."
+    "failed": "Nem sikerult elinditani a fogadast telefonrol.",
+    "localsend_note": "A LocalSend appban is megtalalhato — valaszd ott a krokodylt kuldeshez szkenneles nelkul."
   }
 }

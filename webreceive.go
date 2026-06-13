@@ -174,33 +174,38 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "received %d file(s)", saved)
 }
 
-// savePart streams one uploaded file into the destination under a sanitized,
-// collision-free name (returned), streaming to a tmp file then renaming so a
-// half-written upload never appears at the final name.
 func (wr *webReceiver) savePart(rawName string, src io.Reader) (string, int64, error) {
-	name, err := safeUploadName(wr.dest, rawName)
+	return saveUploadedFile(wr.dest, rawName, src)
+}
+
+// saveUploadedFile streams one uploaded file into dest under a sanitized,
+// collision-free name (returned), via a tmp file then rename so a half-written
+// upload never appears at the final name. Shared by the web-upload and
+// LocalSend receivers — both take untrusted filenames off the network.
+func saveUploadedFile(dest, rawName string, src io.Reader) (string, int64, error) {
+	name, err := safeUploadName(dest, rawName)
 	if err != nil {
-		return "", 0, fmt.Errorf("webreceive: choose name for %q: %w", rawName, err)
+		return "", 0, fmt.Errorf("save: choose name for %q: %w", rawName, err)
 	}
-	final := filepath.Join(wr.dest, name)
+	final := filepath.Join(dest, name)
 	tmp := final + ".krokodyl-part"
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return "", 0, fmt.Errorf("webreceive: create %q: %w", name, err)
+		return "", 0, fmt.Errorf("save: create %q: %w", name, err)
 	}
 	n, err := io.Copy(out, src)
 	if err != nil {
 		out.Close()
 		os.Remove(tmp)
-		return "", 0, fmt.Errorf("webreceive: write %q: %w", name, err)
+		return "", 0, fmt.Errorf("save: write %q: %w", name, err)
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(tmp)
-		return "", 0, fmt.Errorf("webreceive: close %q: %w", name, err)
+		return "", 0, fmt.Errorf("save: close %q: %w", name, err)
 	}
 	if err := os.Rename(tmp, final); err != nil {
 		os.Remove(tmp)
-		return "", 0, fmt.Errorf("webreceive: finalize %q: %w", name, err)
+		return "", 0, fmt.Errorf("save: finalize %q: %w", name, err)
 	}
 	return name, n, nil
 }
@@ -298,10 +303,17 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 	a.mu.Lock()
 	old := a.webRecv
 	a.webRecv = wr
+	oldLS := a.localSend
+	a.localSend = nil
 	a.mu.Unlock()
 	if old != nil {
 		old.close()
 	}
+	if oldLS != nil {
+		oldLS.close()
+	}
+	// Also become discoverable to LocalSend apps (best-effort).
+	a.startLocalSend(dest)
 
 	url := phoneReceiveURL(wr.port, wr.token)
 	info := PhoneReceiveInfo{URL: url}
@@ -313,14 +325,20 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 	return info, nil
 }
 
-// StopPhoneReceive shuts the upload server down (also called on app shutdown).
+// StopPhoneReceive shuts the upload + LocalSend servers down (also called on
+// app shutdown).
 func (a *App) StopPhoneReceive() {
 	a.mu.Lock()
 	wr := a.webRecv
 	a.webRecv = nil
+	ls := a.localSend
+	a.localSend = nil
 	a.mu.Unlock()
 	if wr != nil {
 		wr.close()
+	}
+	if ls != nil {
+		ls.close()
 	}
 }
 

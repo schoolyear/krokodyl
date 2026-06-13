@@ -162,6 +162,7 @@
     "same_network": "Files you pick on the phone arrive in your downloads folder.",
     "qr_alt": "QR code linking to the krokodyl upload page",
     "close": "Stop receiving",
-    "failed": "Could not start phone receiving."
+    "failed": "Could not start phone receiving.",
+    "localsend_note": "Also discoverable in the LocalSend app — pick krokodyl there to send without scanning."
   }
 }

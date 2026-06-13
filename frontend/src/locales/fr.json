@@ -162,6 +162,7 @@
     "same_network": "Les fichiers choisis sur le telephone arrivent dans votre dossier de telechargements.",
     "qr_alt": "Code QR vers la page d'envoi krokodyl",
     "close": "Arreter la reception",
-    "failed": "Impossible de demarrer la reception depuis le telephone."
+    "failed": "Impossible de demarrer la reception depuis le telephone.",
+    "localsend_note": "Aussi visible dans l'application LocalSend — choisissez-y krokodyl pour envoyer sans scanner."
   }
 }

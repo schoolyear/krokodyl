@@ -162,6 +162,7 @@
     "same_network": "Bestanden die je op de telefoon kiest, komen in je downloadmap terecht.",
     "qr_alt": "QR-code naar de krokodyl-uploadpagina",
     "close": "Stop met ontvangen",
-    "failed": "Kan ontvangen van telefoon niet starten."
+    "failed": "Kan ontvangen van telefoon niet starten.",
+    "localsend_note": "Ook vindbaar in de LocalSend-app — kies daar krokodyl om te verzenden zonder scannen."
   }
 }

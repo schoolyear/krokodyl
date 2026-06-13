@@ -60,6 +60,11 @@ type App struct {
 	// webRecv is the opt-in phone→desktop upload server; nil unless the user
 	// has "Receive from phone" turned on.
 	webRecv *webReceiver
+	// localSend speaks the LocalSend protocol so that app can send to us;
+	// started/stopped with the same opt-in as webRecv. lsOffers holds pending
+	// LocalSend accept prompts (reusing the nearby:offer UI), keyed by offer id.
+	localSend *localSendReceiver
+	lsOffers  map[string]chan bool
 
 	historyMu sync.Mutex
 
@@ -115,6 +120,7 @@ func (a *App) startup(ctx context.Context) {
 	a.overwriteResponses = make(map[string]chan string)
 	a.cancels = make(map[string]chan struct{})
 	a.expectations = make(map[string]*receiveExpectation)
+	a.lsOffers = make(map[string]chan bool)
 	a.ble = newBLERadio()
 
 	// Files dropped anywhere on the window start a send immediately.
@@ -387,11 +393,14 @@ func (a *App) performPeerSend(id string, peer NearbyPeer, paths, names []string,
 	a.rememberLastPeer(peer.Name)
 }
 
-// RespondToNearbyOffer resolves the incoming-offer prompt.
+// RespondToNearbyOffer resolves the incoming-offer prompt. The same prompt UI
+// serves both croc nearby offers and LocalSend offers; the offer id matches at
+// most one, the other call is a no-op.
 func (a *App) RespondToNearbyOffer(offerID string, accept bool) {
 	if a.nearbySrv != nil {
 		a.nearbySrv.respond(offerID, accept)
 	}
+	a.resolveLocalSendOffer(offerID, accept)
 }
 
 // GetNearbyPeers returns the currently visible nearby devices.
@@ -448,6 +457,13 @@ func (a *App) shutdown(_ context.Context) {
 	}
 	if webRecv != nil {
 		webRecv.close()
+	}
+	a.mu.Lock()
+	ls := a.localSend
+	a.localSend = nil
+	a.mu.Unlock()
+	if ls != nil {
+		ls.close()
 	}
 
 	a.mu.Lock()

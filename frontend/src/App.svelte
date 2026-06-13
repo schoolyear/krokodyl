@@ -922,6 +922,7 @@
         </button>
       </div>
       <p class="offline-ble-note">{$_('phone.same_network')}</p>
+      <p class="offline-ble-note">{$_('phone.localsend_note')}</p>
       <div class="modal-actions">
         <button class="btn primary" onclick={stopPhoneReceive}>{$_('phone.close')}</button>
       </div>
