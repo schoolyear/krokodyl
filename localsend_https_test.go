@@ -14,7 +14,7 @@ import (
 // client pinning the wrong one is rejected. (Runs on an OS-assigned port so it
 // never collides with a real instance on 53317.)
 func TestLocalSendHTTPSAndPinning(t *testing.T) {
-	r, err := newLocalSendReceiver(t.TempDir(), "Warm Ocelot", 0,
+	r, err := newLocalSendReceiver(t.TempDir(), "Warm Ocelot", 0, nil,
 		func(string, string, []string, int64) bool { return true }, nil)
 	if err != nil {
 		t.Fatal(err)

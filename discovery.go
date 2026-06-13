@@ -50,8 +50,9 @@ type NearbyPeer struct {
 	Addr        string   `json:"addr"`            // address the announcement arrived from
 	Addrs       []string `json:"addrs,omitempty"` // all reachable addresses the peer advertised
 	Port        int      `json:"port"`
-	MachineID   string   `json:"machineId"` // stable per-install id; survives restarts/renames
-	Fingerprint string   `json:"-"`         // control-channel cert pin; backend-only
+	MachineID   string   `json:"machineId"`      // stable per-install id; survives restarts/renames
+	Fingerprint string   `json:"-"`              // control-channel / HTTPS cert pin; backend-only
+	Kind        string   `json:"kind,omitempty"` // "" = krokodyl peer; "localsend" = LocalSend device
 }
 
 type DiscoveryState struct {
@@ -65,6 +66,7 @@ type discoveryIdentity struct {
 	Fingerprint string   `json:"fingerprint,omitempty"` // control-channel cert SHA-256 (hex)
 	MachineID   string   `json:"machineId,omitempty"`   // stable per-install id
 	Addrs       []string `json:"addrs,omitempty"`       // reachable addresses to dial
+	Kind        string   `json:"kind,omitempty"`        // "" = krokodyl; "localsend" = LocalSend device
 	// Gen rises each time this instance becomes visible again. A goodbye
 	// suppresses only same-or-older-generation announcements (in-flight
 	// stragglers); a higher generation means an intentional unhide and is
@@ -214,6 +216,7 @@ func (r *peerRegistry) observe(id discoveryIdentity, addr string, now time.Time)
 		existing.Port = id.Port
 		existing.MachineID = id.MachineID
 		existing.Fingerprint = id.Fingerprint
+		existing.Kind = id.Kind
 	} else {
 		r.peers[id.ID] = &trackedPeer{
 			NearbyPeer: NearbyPeer{
@@ -224,6 +227,7 @@ func (r *peerRegistry) observe(id discoveryIdentity, addr string, now time.Time)
 				Port:        id.Port,
 				MachineID:   id.MachineID,
 				Fingerprint: id.Fingerprint,
+				Kind:        id.Kind,
 			},
 			lastSeen: now,
 		}

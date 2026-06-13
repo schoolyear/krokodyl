@@ -14,6 +14,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -94,6 +96,11 @@ type localSendReceiver struct {
 	onOffer func(alias, addr string, files []string, size int64) bool
 	onFile  func(name string, size int64)
 
+	// registry, when set, receives discovered LocalSend devices so they appear
+	// in the shared Nearby Devices list (and can be sent to). Optional (nil in
+	// tests); set by the App at startup.
+	registry *peerRegistry
+
 	mu       sync.Mutex
 	sessions map[string]*lsSession
 
@@ -121,7 +128,7 @@ func randomFingerprint() string {
 // SHA-256 fingerprint of our self-signed cert; peers pin that fingerprint
 // (LocalSend's trust model — same as krokodyl's own nearby channel). A bind
 // failure is non-fatal: the caller logs it and the QR web upload still works.
-func newLocalSendReceiver(dest, alias string, port int, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*localSendReceiver, error) {
+func newLocalSendReceiver(dest, alias string, port int, registry *peerRegistry, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*localSendReceiver, error) {
 	if onOffer == nil {
 		onOffer = func(string, string, []string, int64) bool { return false }
 	}
@@ -162,6 +169,7 @@ func newLocalSendReceiver(dest, alias string, port int, onOffer func(string, str
 			Protocol:    "https",
 			Download:    false,
 		},
+		registry:    registry,
 		onOffer:     onOffer,
 		onFile:      onFile,
 		sessions:    make(map[string]*lsSession),
@@ -511,6 +519,21 @@ func (r *localSendReceiver) readAnnouncements(pc *ipv4.PacketConn) {
 		if ua, ok := src.(*net.UDPAddr); ok {
 			host = ua.IP.String()
 		}
+		// Surface the LocalSend device in the shared Nearby Devices list so the
+		// user can send to it. A fingerprint is required (it's both the stable
+		// id and the cert pin used when we upload); re-observing on each 3s
+		// announce keeps it alive past the registry TTL. The id is namespaced so
+		// it can't collide with a krokodyl peer's UUID.
+		if r.registry != nil && info.Fingerprint != "" {
+			r.registry.observe(discoveryIdentity{
+				ID:          "ls-" + info.Fingerprint,
+				Name:        sanitizeDisplayName(info.Alias),
+				Port:        info.Port,
+				Fingerprint: info.Fingerprint,
+				Addrs:       []string{host},
+				Kind:        "localsend",
+			}, host, time.Now())
+		}
 		// Bound concurrent register-backs so a multicast flood can't spawn
 		// unbounded goroutines / outbound POSTs; drop when saturated.
 		select {
@@ -543,7 +566,7 @@ func (a *App) startLocalSend(dest string) {
 	if alias == "" {
 		alias = "krokodyl"
 	}
-	ls, err := newLocalSendReceiver(dest, alias, localSendPort, a.localSendOffer, func(name string, size int64) {
+	ls, err := newLocalSendReceiver(dest, alias, localSendPort, a.nearby, a.localSendOffer, func(name string, size int64) {
 		a.tm.add(FileTransfer{
 			ID:       "receive-ls-" + uuid.NewString(),
 			Name:     name,
@@ -665,4 +688,156 @@ func pinFingerprint(expected string) func([][]byte, [][]*x509.Certificate) error
 		}
 		return nil
 	}
+}
+
+// localSendClient is an HTTPS client pinned to a peer's announced fingerprint
+// (the LocalSend trust model). No overall timeout — uploads can be large and
+// prepare-upload blocks while the peer's user decides; callers bound the
+// prepare step with a request context instead.
+func localSendClient(fingerprint string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{
+			MinVersion:            tls.VersionTLS12,
+			InsecureSkipVerify:    true, //nolint:gosec // self-signed; pinned below
+			VerifyPeerCertificate: pinFingerprint(fingerprint),
+		}},
+	}
+}
+
+// lsCountingReader reports bytes read so an upload can drive a progress bar.
+type lsCountingReader struct {
+	r      io.Reader
+	onRead func(n int)
+}
+
+func (c *lsCountingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if n > 0 && c.onRead != nil {
+		c.onRead(n)
+	}
+	return n, err
+}
+
+// performLocalSendUpload sends the chosen files to a discovered LocalSend device
+// over the LocalSend v2 protocol: prepare-upload (the peer's user is prompted to
+// accept), then one upload POST per accepted file, pinned to the peer's cert
+// fingerprint. It drives the transfer record Waiting -> Sending -> Completed
+// (or Error). Bytes never go through krokodyl's croc path here — this speaks
+// LocalSend's own HTTP API, the same one we serve on the receive side.
+func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []string, totalSize int64) {
+	a.mu.Lock()
+	ls := a.localSend
+	a.mu.Unlock()
+	if ls == nil {
+		a.failTransfer(id, "LocalSend is not running")
+		return
+	}
+	if peer.Fingerprint == "" {
+		a.failTransfer(id, "this LocalSend device can't be verified")
+		return
+	}
+
+	// Build the prepare-upload request: a files map keyed by a per-file id.
+	fileIDs := make([]string, len(paths))
+	meta := make(map[string]lsFileMeta, len(paths))
+	for i, p := range paths {
+		fid := strconv.Itoa(i)
+		fileIDs[i] = fid
+		var size int64
+		if info, err := os.Stat(p); err == nil {
+			size = info.Size()
+		}
+		meta[fid] = lsFileMeta{ID: fid, FileName: names[i], Size: size, FileType: "application/octet-stream"}
+	}
+
+	client := localSendClient(peer.Fingerprint)
+	host := peer.Addr
+	if host == "" && len(peer.Addrs) > 0 {
+		host = peer.Addrs[0]
+	}
+	base := "https://" + net.JoinHostPort(host, strconv.Itoa(peer.Port)) + "/api/localsend/v2/"
+
+	// prepare-upload — the peer prompts its user here; bound the wait so a
+	// never-answered prompt doesn't hang the transfer forever.
+	prepBody, _ := json.Marshal(lsPrepareRequest{Info: ls.self, Files: meta})
+	ctx, cancel := context.WithTimeout(context.Background(), offerPromptWait+30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"prepare-upload", bytes.NewReader(prepBody))
+	if err != nil {
+		a.failTransfer(id, err.Error())
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		a.failTransfer(id, fmt.Sprintf("could not reach %s", peer.Name))
+		return
+	}
+	switch {
+	case resp.StatusCode == http.StatusForbidden:
+		resp.Body.Close()
+		a.failTransfer(id, fmt.Sprintf("%s declined the transfer", peer.Name))
+		return
+	case resp.StatusCode == http.StatusTooManyRequests:
+		resp.Body.Close()
+		a.failTransfer(id, fmt.Sprintf("%s is busy with another transfer", peer.Name))
+		return
+	case resp.StatusCode != http.StatusOK:
+		resp.Body.Close()
+		a.failTransfer(id, fmt.Sprintf("%s rejected the transfer (%d)", peer.Name, resp.StatusCode))
+		return
+	}
+	var prep lsPrepareResponse
+	derr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&prep)
+	resp.Body.Close()
+	if derr != nil {
+		a.failTransfer(id, "unexpected response from "+peer.Name)
+		return
+	}
+
+	a.tm.update(id, func(t *FileTransfer) { t.Status = FileTransferStatusSending })
+
+	var sent int64
+	for i, p := range paths {
+		token := prep.Files[fileIDs[i]]
+		if token == "" {
+			continue // peer didn't accept this particular file
+		}
+		f, err := os.Open(p)
+		if err != nil {
+			a.failTransfer(id, "could not open "+names[i])
+			return
+		}
+		q := url.Values{"sessionId": {prep.SessionID}, "fileId": {fileIDs[i]}, "token": {token}}
+		body := &lsCountingReader{r: f, onRead: func(n int) {
+			sent += int64(n)
+			pct := 100
+			if totalSize > 0 {
+				if pct = int(sent * 100 / totalSize); pct > 100 {
+					pct = 100
+				}
+			}
+			a.tm.update(id, func(t *FileTransfer) { t.Progress = pct })
+		}}
+		ureq, _ := http.NewRequest(http.MethodPost, base+"upload?"+q.Encode(), body)
+		ureq.Header.Set("Content-Type", "application/octet-stream")
+		ureq.ContentLength = meta[fileIDs[i]].Size
+		ures, err := client.Do(ureq)
+		f.Close()
+		if err != nil {
+			a.failTransfer(id, fmt.Sprintf("upload to %s failed", peer.Name))
+			return
+		}
+		ures.Body.Close()
+		if ures.StatusCode != http.StatusOK {
+			a.failTransfer(id, fmt.Sprintf("%s rejected %s (%d)", peer.Name, names[i], ures.StatusCode))
+			return
+		}
+	}
+
+	a.rememberLastPeer(peer.Name)
+	a.tm.update(id, func(t *FileTransfer) {
+		t.Status = FileTransferStatusCompleted
+		t.Progress = 100
+	})
 }

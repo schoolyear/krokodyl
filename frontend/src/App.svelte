@@ -60,6 +60,7 @@
     addrs?: string[];
     port?: number;
     machineId?: string;
+    kind?: string; // "" = krokodyl peer; "localsend" = LocalSend device
   }
 
   let transfers: FileTransfer[] = $state([]);
@@ -651,6 +652,9 @@
                     <button class="peer-chip" onclick={() => sendToNearbyPeer(peer)} disabled={isSending} aria-label={$_('a11y.send_to', { values: { name: peer.name } })} title={peer.addr}>
                       <span class="peer-monogram" aria-hidden="true">{peer.name.charAt(0).toUpperCase()}</span>
                       <span class="peer-name">{peer.name}</span>
+                      {#if peer.kind === 'localsend'}
+                        <span class="peer-badge">LocalSend</span>
+                      {/if}
                       {#if peer.name === lastPeerName}
                         <span class="peer-recent">{$_('nearby.recent')}</span>
                       {/if}
@@ -1155,6 +1159,18 @@
     letter-spacing: 0.05em;
     color: var(--color-accent-text);
     background-color: var(--color-primary-soft);
+    padding: 0.1rem 0.375rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  .peer-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-dim);
+    border: 1px solid var(--color-border);
     padding: 0.1rem 0.375rem;
     border-radius: 999px;
     flex-shrink: 0;

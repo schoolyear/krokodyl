@@ -363,11 +363,19 @@ func (a *App) sendToPeer(peerID string, paths []string, code string) (string, er
 		Peer:          peer.Name,
 		PeerMachineID: peer.MachineID,
 		Paths:         paths,
-		Resendable:    true,
+		// LocalSend peers have no stable krokodyl MachineID to re-target, so the
+		// resend feature (which matches on MachineID) doesn't apply to them.
+		Resendable: peer.Kind != "localsend",
 	}
 	a.tm.add(transfer)
 
-	go a.performPeerSend(transfer.ID, peer, paths, names, totalSize, code)
+	// A LocalSend device speaks the LocalSend HTTP protocol, not krokodyl's
+	// control-channel + croc handoff — route it to the LocalSend uploader.
+	if peer.Kind == "localsend" {
+		go a.performLocalSendUpload(transfer.ID, peer, paths, names, totalSize)
+	} else {
+		go a.performPeerSend(transfer.ID, peer, paths, names, totalSize, code)
+	}
 
 	return transfer.ID, nil
 }

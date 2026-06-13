@@ -45,6 +45,7 @@ export namespace main {
 	    addrs?: string[];
 	    port: number;
 	    machineId: string;
+	    kind?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new NearbyPeer(source);
@@ -58,6 +59,7 @@ export namespace main {
 	        this.addrs = source["addrs"];
 	        this.port = source["port"];
 	        this.machineId = source["machineId"];
+	        this.kind = source["kind"];
 	    }
 	}
 	export class NearbyPrefs {
