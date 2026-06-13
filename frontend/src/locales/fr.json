@@ -121,8 +121,6 @@
     "title": "Pas de reseau commun ?",
     "subtitle": "Creez une connexion directe entre les deux appareils — sans internet.",
     "cta": "Pas de reseau ? Connexion directe",
-    "ble_unavailable": "L'appairage Bluetooth automatique n'est pas active dans cette version — suivez les etapes manuelles ci-dessous.",
-    "ble_available": "L'appairage Bluetooth est disponible sur cet appareil.",
     "ssid_label": "Nom du reseau",
     "psk_label": "Mot de passe",
     "host_label": "Sur cet appareil — heberger la connexion",

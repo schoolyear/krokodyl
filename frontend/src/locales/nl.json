@@ -121,8 +121,6 @@
     "title": "Geen gedeeld netwerk?",
     "subtitle": "Maak een directe verbinding tussen de twee apparaten — geen internet nodig.",
     "cta": "Geen netwerk? Verbind direct",
-    "ble_unavailable": "Automatische Bluetooth-koppeling staat niet aan in deze build — volg de handmatige stappen hieronder.",
-    "ble_available": "Bluetooth-koppeling is beschikbaar op dit apparaat.",
     "ssid_label": "Netwerknaam",
     "psk_label": "Wachtwoord",
     "host_label": "Op dit apparaat — host de verbinding",

@@ -121,8 +121,6 @@
     "title": "¿Sin red compartida?",
     "subtitle": "Crea una conexion directa entre los dos dispositivos — sin internet.",
     "cta": "¿Sin red? Conectar directamente",
-    "ble_unavailable": "El emparejamiento Bluetooth automatico no esta habilitado en esta version — sigue los pasos manuales de abajo.",
-    "ble_available": "El emparejamiento Bluetooth esta disponible en este dispositivo.",
     "ssid_label": "Nombre de red",
     "psk_label": "Contrasena",
     "host_label": "En este dispositivo — alojar la conexion",

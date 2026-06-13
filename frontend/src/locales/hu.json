@@ -121,8 +121,6 @@
     "title": "Nincs kozos halozat?",
     "subtitle": "Hozz letre kozvetlen kapcsolatot a ket eszkoz kozott — internet nelkul.",
     "cta": "Nincs halozat? Kozvetlen kapcsolat",
-    "ble_unavailable": "Az automatikus Bluetooth-parositas nincs engedelyezve ebben a valtozatban — kovesd az alabbi kezi lepeseket.",
-    "ble_available": "A Bluetooth-parositas elerheto ezen az eszkozon.",
     "ssid_label": "Halozat neve",
     "psk_label": "Jelszo",
     "host_label": "Ezen az eszkozon — kapcsolat gazdaja",

@@ -121,8 +121,6 @@
     "title": "No shared network?",
     "subtitle": "Make a direct connection between the two devices — no internet needed.",
     "cta": "No network? Connect directly",
-    "ble_unavailable": "Automatic Bluetooth pairing isn't enabled in this build — follow the manual steps below.",
-    "ble_available": "Bluetooth pairing is available on this device.",
     "ssid_label": "Network name",
     "psk_label": "Password",
     "host_label": "On this device — host the connection",
