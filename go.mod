@@ -9,6 +9,8 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/wailsapp/wails/v2 v2.12.0
+	google.golang.org/grpc v1.81.1
+	google.golang.org/protobuf v1.36.11
 	tinygo.org/x/bluetooth v0.15.0
 )
 
@@ -62,4 +64,5 @@ require (
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 )

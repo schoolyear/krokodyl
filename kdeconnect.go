@@ -48,29 +48,34 @@ type kdeConnectReceiver struct {
 
 	udp    *net.UDPConn
 	tcp    net.Listener
+	port   int
 	stopCh chan struct{}
 }
 
-func newKDEConnectReceiver(dest, deviceID, name string, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*kdeConnectReceiver, error) {
+// newKDEConnectReceiver listens on the given TCP port (0 = OS-assigned, used by
+// tests; production passes kcDefaultPort). The bound port is exposed via .port.
+func newKDEConnectReceiver(dest, deviceID, name string, port int, onOffer func(string, string, []string, int64) bool, onFile func(string, int64)) (*kdeConnectReceiver, error) {
 	cert, err := ephemeralCertificate()
 	if err != nil {
 		return nil, fmt.Errorf("kdeconnect: certificate: %w", err)
 	}
-	tcp, err := tls.Listen("tcp", fmt.Sprintf(":%d", kcDefaultPort), &tls.Config{
+	tcp, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12, // KDE Connect peers vary; 1.2 floor
 		ClientAuth:   tls.RequireAnyClientCert,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("kdeconnect: listen tcp %d: %w", kcDefaultPort, err)
+		return nil, fmt.Errorf("kdeconnect: listen tcp %d: %w", port, err)
 	}
+	bound := tcp.Addr().(*net.TCPAddr).Port
 	r := &kdeConnectReceiver{
 		dest:     dest,
-		identity: ourKCIdentity(deviceID, name, kcDefaultPort),
+		identity: ourKCIdentity(deviceID, name, bound),
 		tlsCert:  cert,
 		onOffer:  onOffer,
 		onFile:   onFile,
 		tcp:      tcp,
+		port:     bound,
 		stopCh:   make(chan struct{}),
 	}
 	go r.acceptLoop()
@@ -79,7 +84,7 @@ func newKDEConnectReceiver(dest, deviceID, name string, onOffer func(string, str
 }
 
 func (r *kdeConnectReceiver) startUDP() {
-	addr := &net.UDPAddr{Port: kcDefaultPort}
+	addr := &net.UDPAddr{Port: r.port}
 	conn, err := net.ListenUDP("udp4", addr)
 	if err != nil {
 		logrus.WithError(err).Debug("kdeconnect: udp identity listen unavailable")
@@ -216,7 +221,7 @@ func (a *App) startKDEConnect(dest string) func() {
 	if id == "" {
 		id = "krokodyl"
 	}
-	r, err := newKDEConnectReceiver(dest, id, name, a.localSendOffer, func(fname string, size int64) {
+	r, err := newKDEConnectReceiver(dest, id, name, kcDefaultPort, a.localSendOffer, func(fname string, size int64) {
 		a.tm.add(FileTransfer{
 			ID:       "receive-kde-" + uuid.NewString(),
 			Name:     fname,

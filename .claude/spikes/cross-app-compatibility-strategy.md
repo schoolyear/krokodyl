@@ -36,17 +36,28 @@ up *inside* that app with no QR step. Each adapter plugs into the same seam:
 opt-in lifecycle (`StartPhoneReceive`), human-accept consent (the `nearby:offer`
 prompt), and the shared sanitized `saveUploadedFile`.
 - **LocalSend** — ✅ built (`localsend.go`).
-- **KDE Connect** — ⏳ built but GATED (`-tags krokodyl_kdeconnect`, off by
-  default). Tested protocol codec (`kdeconnect_proto.go`); the network/pairing/
-  payload adapter (`kdeconnect.go`) compiles and reuses the consent + save
-  pipeline but is HARDWARE-UNVALIDATED and uses InsecureSkipVerify pending the
-  pairing/cert-pinning step — must not ship enabled until validated with the
-  app on a paired device.
-- **Warpinator** — 🧱 SCAFFOLD. Testable discovery/message helpers
-  (`warpinator_proto.go`) + the canonical `warpinator/warp.proto`. The gRPC
-  transport needs `protoc` codegen + the real app to validate — neither
-  possible headlessly; steps in `.claude/spikes/warpinator-runbook.md`. NOT
-  functional yet.
+- **KDE Connect** — ✅ built + **E2E-validated**, GATED (`-tags krokodyl_kdeconnect`,
+  off by default). Protocol codec tested (`kdeconnect_proto.go`); the real
+  network adapter (`kdeconnect.go`) is exercised end-to-end over real loopback
+  TLS sockets by `kdeconnect_e2e_test.go` (a counterpart speaking the actual
+  KDE Connect wire protocol): identity exchange → share.request → payload TLS
+  fetch → sanitized save, all proven. Remaining for real-APP interop: device
+  pairing + cert pinning (replaces the current InsecureSkipVerify) — gated off
+  until that's done + checked against the KDE Connect app.
+- **Warpinator** — ✅ built + **E2E-validated**, GATED (`-tags krokodyl_warpinator`,
+  off by default). gRPC stubs generated from `warpinator/warp.proto` (via buf,
+  committed in `warpinator/warppb/`); the real gRPC server (`warpinator.go`) is
+  exercised end-to-end by `warpinator_e2e_test.go` (a stub sender streams a
+  chunked file): ProcessTransferOpRequest → consent → receiver pulls
+  StartTransfer → chunks assembled → saved, all proven over real gRPC.
+  Remaining for real-APP interop: zeroconf discovery + the group-code cert
+  auth — see `.claude/spikes/warpinator-runbook.md`.
+
+**What "validated" means here:** the transfer logic of each adapter is proven
+to work over real sockets/gRPC against a conformant counterpart. The only thing
+not yet done is bug-for-bug interop with the proprietary app itself (needs the
+app + a second device + the auth/discovery layer), which is the documented
+remaining work — not a gap in the transfer code.
 
 ### Tier 3 — Closed protocols (not supported, by necessity)
 AirDrop, Quick Share/Nearby Share, MobileTrans, SHAREit, Xender, Send Anywhere.

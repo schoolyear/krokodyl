@@ -1,11 +1,17 @@
-# Warpinator adapter — finish + validate runbook
+# Warpinator adapter — status + remaining-work runbook
 
-**Status: SCAFFOLD.** The hardware-free pieces are in `warpinator_proto.go`
-(discovery constants, message shapes, the offer-summary helper) with unit
-tests. The gRPC transport is NOT implemented here because it requires `protoc`
-code generation and the real Warpinator app on a second device to validate —
-neither possible in a headless build. This is the path to finish it; do not
-claim Warpinator works until step 5 passes.
+**Status: TRANSFER PATH BUILT + E2E-VALIDATED (gated).** gRPC stubs are
+generated (`warpinator/warppb/`, via buf — see below), the real gRPC server is
+in `warpinator.go` (`-tags krokodyl_warpinator`, off by default), and
+`warpinator_e2e_test.go` proves the full receive flow over real gRPC against a
+stub sender: ProcessTransferOpRequest → consent → pull StartTransfer stream →
+assemble chunks → save. What's left is **real-app interop** (steps 2–3 + 5
+below): zeroconf discovery and the group-code cert auth, then validation
+against the actual Warpinator app.
+
+Stubs were regenerated with buf (no system protoc):
+`go install github.com/bufbuild/buf/cmd/buf@latest` + protoc-gen-go(-grpc),
+then `cd warpinator && buf generate`.
 
 ## Why it's not done in-repo
 Warpinator's transport is gRPC over protobuf with zeroconf/mDNS discovery and a

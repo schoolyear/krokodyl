@@ -307,9 +307,11 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 	a.localSend = nil
 	oldKDE := a.kdeStop
 	a.kdeStop = nil
+	oldWarp := a.warpStop
+	a.warpStop = nil
 	a.mu.Unlock()
-	// Close any previous receivers BEFORE starting new ones — KDE Connect binds
-	// a fixed port (1716), so a lingering old listener would block the new one.
+	// Close any previous receivers BEFORE starting new ones — KDE Connect and
+	// Warpinator bind fixed ports, so a lingering old listener blocks the new.
 	if old != nil {
 		old.close()
 	}
@@ -319,14 +321,22 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 	if oldKDE != nil {
 		oldKDE()
 	}
+	if oldWarp != nil {
+		oldWarp()
+	}
 
 	// Also become discoverable to LocalSend apps (best-effort).
 	a.startLocalSend(dest)
-	// And to KDE Connect, if built with -tags krokodyl_kdeconnect (no-op
-	// otherwise). Stored so it's stopped with the rest.
+	// And to KDE Connect / Warpinator, if built with their tags (no-ops
+	// otherwise). Stored so they're stopped with the rest.
 	if stop := a.startKDEConnect(dest); stop != nil {
 		a.mu.Lock()
 		a.kdeStop = stop
+		a.mu.Unlock()
+	}
+	if stop := a.startWarpinator(dest); stop != nil {
+		a.mu.Lock()
+		a.warpStop = stop
 		a.mu.Unlock()
 	}
 
@@ -350,6 +360,8 @@ func (a *App) StopPhoneReceive() {
 	a.localSend = nil
 	kdeStop := a.kdeStop
 	a.kdeStop = nil
+	warpStop := a.warpStop
+	a.warpStop = nil
 	a.mu.Unlock()
 	if wr != nil {
 		wr.close()
@@ -359,6 +371,9 @@ func (a *App) StopPhoneReceive() {
 	}
 	if kdeStop != nil {
 		kdeStop()
+	}
+	if warpStop != nil {
+		warpStop()
 	}
 }
 
