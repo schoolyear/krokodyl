@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/ipv4"
 )
 
 // LocalSend interop: krokodyl speaks the open LocalSend v2 protocol so the
@@ -129,10 +130,19 @@ func newLocalSendReceiver(dest, alias string, port int, onOffer func(string, str
 	if err != nil {
 		return nil, fmt.Errorf("localsend: certificate: %w", err)
 	}
-	ln, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), &tls.Config{
+	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-	})
+	}
+	ln, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), tlsCfg)
+	if err != nil && port == localSendPort {
+		// The standard port is busy — most likely the official LocalSend app is
+		// already running on this machine. Take an ephemeral port instead and
+		// announce it; LocalSend peers connect to the port from the announcement,
+		// so we coexist with the app rather than vanishing.
+		logrus.WithError(err).Info("localsend: port 53317 busy, using an ephemeral port and announcing it")
+		ln, err = tls.Listen("tcp", ":0", tlsCfg)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("localsend port %d unavailable: %w", port, err)
 	}
@@ -382,46 +392,42 @@ func (r *localSendReceiver) runMulticast() {
 		}
 	}
 
-	// Announce: bind each sender to a real interface's IPv4 so egress is forced
-	// onto that adapter (binding the local addr pins the outgoing interface),
-	// rather than leaving it to the OS-default (often-virtual) multicast route.
+	// Announce: one socket, explicitly setting the multicast EGRESS interface
+	// before each send. This is the correct cross-platform way — binding a local
+	// address does NOT reliably set IP_MULTICAST_IF on Windows, so without this
+	// the announce leaves via the OS-default (often virtual) interface and the
+	// phone never hears us, even though our join side already hears the phone.
 	announce := r.self
 	announce.Announce = true
 	payload, _ := json.Marshal(announce)
 
-	var outs []*net.UDPConn
-	for i := range ifaces {
-		ip := firstIPv4(ifaces[i])
-		if ip == nil {
-			continue
-		}
-		out, err := net.DialUDP("udp4", &net.UDPAddr{IP: ip}, gaddr)
-		if err != nil {
-			logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: multicast announce dial failed")
-			continue
-		}
-		outs = append(outs, out)
+	uconn, err := net.ListenPacket("udp4", "0.0.0.0:0")
+	if err != nil {
+		logrus.WithError(err).Debug("localsend multicast announce unavailable")
+		return
 	}
-	if len(outs) == 0 { // fall back to OS-default egress
-		out, err := net.DialUDP("udp4", nil, gaddr)
-		if err != nil {
-			logrus.WithError(err).Debug("localsend multicast announce unavailable")
+	defer uconn.Close()
+	go func() { <-r.stopCh; uconn.Close() }()
+	pc := ipv4.NewPacketConn(uconn)
+
+	send := func() {
+		if len(ifaces) == 0 {
+			_, _ = pc.WriteTo(payload, nil, gaddr) // OS default
 			return
 		}
-		outs = append(outs, out)
-	}
-	defer func() {
-		for _, o := range outs {
-			o.Close()
+		for i := range ifaces {
+			if err := pc.SetMulticastInterface(&ifaces[i]); err != nil {
+				logrus.WithError(err).WithField("iface", ifaces[i].Name).Debug("localsend: set multicast iface failed")
+				continue
+			}
+			_, _ = pc.WriteTo(payload, nil, gaddr)
 		}
-	}()
+	}
 
 	ticker := time.NewTicker(localSendAnnounceEvery)
 	defer ticker.Stop()
 	for {
-		for _, o := range outs {
-			_, _ = o.Write(payload)
-		}
+		send()
 		select {
 		case <-r.stopCh:
 			return
