@@ -94,6 +94,17 @@ Section
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
 
+    # Windows Firewall: allow inbound so LAN peers can reach krokodyl — the phone
+    # web/QR upload, LocalSend, KDE Connect/Warpinator, and the nearby/croc
+    # channels. A PROGRAM-scoped rule covers every port it ever listens on
+    # (LocalSend 53317, the ephemeral HTTPS upload port, nearby 42791, croc
+    # workers), so we never have to enumerate ports. Without this, Windows'
+    # default-block drops inbound and no device can discover or reach krokodyl.
+    # The installer is elevated (REQUEST_EXECUTION_LEVEL admin), so netsh works.
+    # Delete-then-add keeps it idempotent across upgrades/reinstalls.
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME}"'
+    nsExec::Exec 'netsh advfirewall firewall add rule name="${INFO_PRODUCTNAME}" dir=in action=allow program="$INSTDIR\${PRODUCT_EXECUTABLE}" enable=yes profile=any'
+
     !insertmacro wails.writeUninstaller
 SectionEnd
 
@@ -109,6 +120,9 @@ Section "uninstall"
 
     !insertmacro wails.unassociateFiles
     !insertmacro wails.unassociateCustomProtocols
+
+    # Remove the inbound firewall rule we added at install time.
+    nsExec::Exec 'netsh advfirewall firewall delete rule name="${INFO_PRODUCTNAME}"'
 
     !insertmacro wails.deleteUninstaller
 SectionEnd
