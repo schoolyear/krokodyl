@@ -205,6 +205,15 @@ func (a *App) startNearby() {
 	a.nearbyIdentity = identity
 	a.nearbyEmitState = emitState
 	a.stopDiscovery = startDiscovery(identity, a.nearby, emitState, visible)
+
+	// Receiving (LocalSend + the web/QR endpoint + gated KDE/Warpinator) is on
+	// by default whenever we're visible — no manual toggle, so LocalSend & co.
+	// find krokodyl out of the box.
+	if visible {
+		if dest, err := a.GetDefaultDownloadPath(); err == nil {
+			a.ensureReceiving(dest)
+		}
+	}
 }
 
 // NearbyPrefs is the frontend's view of the nearby-related settings.
@@ -262,6 +271,15 @@ func (a *App) SetNearbyVisible(visible bool) {
 	a.mu.Lock()
 	a.stopDiscovery = newStop
 	a.mu.Unlock()
+
+	// Receiving follows visibility: discoverable ⇒ accept; hidden ⇒ off.
+	if visible {
+		if dest, err := a.GetDefaultDownloadPath(); err == nil {
+			a.ensureReceiving(dest)
+		}
+	} else {
+		a.stopReceiving()
+	}
 }
 
 // rememberLastPeer persists the most recent zero-code target, best-effort.
@@ -450,8 +468,6 @@ func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	stop := a.stopDiscovery
 	srv := a.nearbySrv
-	webRecv := a.webRecv
-	a.webRecv = nil
 	a.mu.Unlock()
 	if stop != nil {
 		stop()
@@ -459,26 +475,7 @@ func (a *App) shutdown(_ context.Context) {
 	if srv != nil {
 		srv.close()
 	}
-	if webRecv != nil {
-		webRecv.close()
-	}
-	a.mu.Lock()
-	ls := a.localSend
-	a.localSend = nil
-	kdeStop := a.kdeStop
-	a.kdeStop = nil
-	warpStop := a.warpStop
-	a.warpStop = nil
-	a.mu.Unlock()
-	if ls != nil {
-		ls.close()
-	}
-	if kdeStop != nil {
-		kdeStop()
-	}
-	if warpStop != nil {
-		warpStop()
-	}
+	a.stopReceiving()
 
 	a.mu.Lock()
 	cmds := make(map[string]*exec.Cmd, len(a.workers))

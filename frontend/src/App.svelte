@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive, StopPhoneReceive } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -397,9 +397,10 @@
     }
   }
 
-  function stopPhoneReceive() {
+  // Closing the QR view just hides it — receiving stays on (it's tied to
+  // nearby visibility, not this dialog), so LocalSend & co. keep working.
+  function closePhoneQR() {
     phoneReceive = null;
-    StopPhoneReceive().catch((e) => console.error('Could not stop phone receive', e));
   }
 
   async function openOffline() {
@@ -867,9 +868,6 @@
     <div class="modal offline-modal" role="dialog" aria-modal="true" aria-labelledby="offline-modal-title" use:modalDialog={() => offlineGuidance = null}>
       <h2 id="offline-modal-title">{$_('offline.title')}</h2>
       <p>{$_('offline.subtitle')}</p>
-      <p class="offline-ble-note">
-        {offlineGuidance.bluetoothAvailable ? $_('offline.ble_available') : $_('offline.ble_unavailable')}
-      </p>
 
       <div class="offline-creds">
         <div>
@@ -909,7 +907,7 @@
 
 {#if phoneReceive}
   <div class="modal-backdrop">
-    <div class="modal phone-modal" role="dialog" aria-modal="true" aria-labelledby="phone-modal-title" use:modalDialog={stopPhoneReceive}>
+    <div class="modal phone-modal" role="dialog" aria-modal="true" aria-labelledby="phone-modal-title" use:modalDialog={closePhoneQR}>
       <h2 id="phone-modal-title">{$_('phone.title')}</h2>
       <p>{$_('phone.subtitle')}</p>
       {#if phoneReceive.qrPng}
@@ -924,7 +922,7 @@
       <p class="offline-ble-note">{$_('phone.same_network')}</p>
       <p class="offline-ble-note">{$_('phone.localsend_note')}</p>
       <div class="modal-actions">
-        <button class="btn primary" onclick={stopPhoneReceive}>{$_('phone.close')}</button>
+        <button class="btn primary" onclick={closePhoneQR}>{$_('phone.close')}</button>
       </div>
     </div>
   </div>

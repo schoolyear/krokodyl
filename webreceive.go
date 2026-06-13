@@ -278,10 +278,16 @@ type PhoneReceiveInfo struct {
 // StartPhoneReceive opens the opt-in upload server and returns the QR/URL the
 // phone scans. Files arrive in the default download directory and appear as
 // completed transfers. Calling again restarts cleanly with a fresh token.
-func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
-	dest, err := a.GetDefaultDownloadPath()
-	if err != nil {
-		return PhoneReceiveInfo{}, err
+// ensureReceiving makes krokodyl reachable from phones/LocalSend/etc. It is
+// idempotent and runs whenever the device is visible (started at launch, not
+// behind a manual toggle) so LocalSend & co. always find krokodyl out of the
+// box. Best-effort: failures are logged, never fatal.
+func (a *App) ensureReceiving(dest string) {
+	a.mu.Lock()
+	already := a.webRecv != nil
+	a.mu.Unlock()
+	if already {
+		return
 	}
 
 	wr, err := newWebReceiver(dest, func(name string, size int64) {
@@ -295,40 +301,21 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 		})
 	})
 	if err != nil {
-		return PhoneReceiveInfo{}, err
+		logrus.WithError(err).Info("phone web-upload unavailable")
+		return
 	}
-
-	// Atomic swap: store the new receiver and close any previous one outside
-	// the lock, so two concurrent starts can't leak an untracked server.
 	a.mu.Lock()
-	old := a.webRecv
+	if a.webRecv != nil { // lost a race; keep the existing one
+		a.mu.Unlock()
+		wr.close()
+		return
+	}
 	a.webRecv = wr
-	oldLS := a.localSend
-	a.localSend = nil
-	oldKDE := a.kdeStop
-	a.kdeStop = nil
-	oldWarp := a.warpStop
-	a.warpStop = nil
 	a.mu.Unlock()
-	// Close any previous receivers BEFORE starting new ones — KDE Connect and
-	// Warpinator bind fixed ports, so a lingering old listener blocks the new.
-	if old != nil {
-		old.close()
-	}
-	if oldLS != nil {
-		oldLS.close()
-	}
-	if oldKDE != nil {
-		oldKDE()
-	}
-	if oldWarp != nil {
-		oldWarp()
-	}
 
-	// Also become discoverable to LocalSend apps (best-effort).
+	// Always discoverable to LocalSend apps (best-effort), and to KDE Connect /
+	// Warpinator when built with their tags (no-ops otherwise).
 	a.startLocalSend(dest)
-	// And to KDE Connect / Warpinator, if built with their tags (no-ops
-	// otherwise). Stored so they're stopped with the rest.
 	if stop := a.startKDEConnect(dest); stop != nil {
 		a.mu.Lock()
 		a.kdeStop = stop
@@ -339,20 +326,10 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 		a.warpStop = stop
 		a.mu.Unlock()
 	}
-
-	url := phoneReceiveURL(wr.port, wr.token)
-	info := PhoneReceiveInfo{URL: url}
-	if png, err := qrcode.Encode(url, qrcode.Medium, 320); err == nil {
-		info.QRPng = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
-	} else {
-		logrus.WithError(err).Debug("phone-receive: QR generation failed")
-	}
-	return info, nil
 }
 
-// StopPhoneReceive shuts the upload + LocalSend servers down (also called on
-// app shutdown).
-func (a *App) StopPhoneReceive() {
+// stopReceiving tears down every receive server (visibility off / shutdown).
+func (a *App) stopReceiving() {
 	a.mu.Lock()
 	wr := a.webRecv
 	a.webRecv = nil
@@ -376,6 +353,38 @@ func (a *App) StopPhoneReceive() {
 		warpStop()
 	}
 }
+
+// StartPhoneReceive ensures the receive servers are up and returns the QR/URL
+// for browser uploads. Receiving is already on by default while visible; this
+// just surfaces the QR on demand.
+func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
+	dest, err := a.GetDefaultDownloadPath()
+	if err != nil {
+		return PhoneReceiveInfo{}, err
+	}
+	a.ensureReceiving(dest)
+
+	a.mu.Lock()
+	wr := a.webRecv
+	a.mu.Unlock()
+	if wr == nil {
+		return PhoneReceiveInfo{}, fmt.Errorf("phone receiving is unavailable")
+	}
+
+	url := phoneReceiveURL(wr.port, wr.token)
+	info := PhoneReceiveInfo{URL: url}
+	if png, err := qrcode.Encode(url, qrcode.Medium, 320); err == nil {
+		info.QRPng = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+	} else {
+		logrus.WithError(err).Debug("phone-receive: QR generation failed")
+	}
+	return info, nil
+}
+
+// StopPhoneReceive is retained for the frontend binding but receiving is now
+// tied to nearby visibility (always on while visible), so closing the QR view
+// no longer stops it. Kept as an explicit override if ever needed.
+func (a *App) StopPhoneReceive() { a.stopReceiving() }
 
 const uploadPageHTML = `<!doctype html>
 <html lang="en"><head>
