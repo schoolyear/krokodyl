@@ -65,6 +65,9 @@ type App struct {
 	// LocalSend accept prompts (reusing the nearby:offer UI), keyed by offer id.
 	localSend *localSendReceiver
 	lsOffers  map[string]chan bool
+	// kdeStop stops the gated KDE Connect adapter (nil unless built with
+	// -tags krokodyl_kdeconnect and currently receiving).
+	kdeStop func()
 
 	historyMu sync.Mutex
 
@@ -461,9 +464,14 @@ func (a *App) shutdown(_ context.Context) {
 	a.mu.Lock()
 	ls := a.localSend
 	a.localSend = nil
+	kdeStop := a.kdeStop
+	a.kdeStop = nil
 	a.mu.Unlock()
 	if ls != nil {
 		ls.close()
+	}
+	if kdeStop != nil {
+		kdeStop()
 	}
 
 	a.mu.Lock()

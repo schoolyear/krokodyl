@@ -305,15 +305,30 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 	a.webRecv = wr
 	oldLS := a.localSend
 	a.localSend = nil
+	oldKDE := a.kdeStop
+	a.kdeStop = nil
 	a.mu.Unlock()
+	// Close any previous receivers BEFORE starting new ones — KDE Connect binds
+	// a fixed port (1716), so a lingering old listener would block the new one.
 	if old != nil {
 		old.close()
 	}
 	if oldLS != nil {
 		oldLS.close()
 	}
+	if oldKDE != nil {
+		oldKDE()
+	}
+
 	// Also become discoverable to LocalSend apps (best-effort).
 	a.startLocalSend(dest)
+	// And to KDE Connect, if built with -tags krokodyl_kdeconnect (no-op
+	// otherwise). Stored so it's stopped with the rest.
+	if stop := a.startKDEConnect(dest); stop != nil {
+		a.mu.Lock()
+		a.kdeStop = stop
+		a.mu.Unlock()
+	}
 
 	url := phoneReceiveURL(wr.port, wr.token)
 	info := PhoneReceiveInfo{URL: url}
@@ -333,12 +348,17 @@ func (a *App) StopPhoneReceive() {
 	a.webRecv = nil
 	ls := a.localSend
 	a.localSend = nil
+	kdeStop := a.kdeStop
+	a.kdeStop = nil
 	a.mu.Unlock()
 	if wr != nil {
 		wr.close()
 	}
 	if ls != nil {
 		ls.close()
+	}
+	if kdeStop != nil {
+		kdeStop()
 	}
 }
 

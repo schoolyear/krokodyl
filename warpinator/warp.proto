@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+// Warpinator transfer service (Linux Mint), faithful subset for a krokodyl
+// RECEIVE adapter. Canonical source: linuxmint/warpinator (warp.proto).
+// Generate Go stubs with the runbook in .claude/spikes/warpinator-runbook.md;
+// this file is committed so codegen + validation can happen on a dev machine.
+
+package warp;
+option go_package = "krokodyl/warpinator/warppb";
+
+service Warp {
+  rpc CheckDuplicateTransfer (LookupName) returns (HaveDuplicate) {}
+  rpc GetRemoteMachineInfo (LookupName) returns (RemoteMachineInfo) {}
+  rpc GetRemoteMachineAvatar (LookupName) returns (stream RemoteMachineAvatar) {}
+  rpc ProcessTransferOpRequest (TransferOpRequest) returns (VoidType) {}
+  rpc StartTransfer (OpInfo) returns (stream FileChunk) {}
+  rpc CancelTransferOpRequest (OpInfo) returns (VoidType) {}
+  rpc StopTransfer (StopInfo) returns (VoidType) {}
+  rpc Ping (LookupName) returns (VoidType) {}
+}
+
+message LookupName {
+  string id = 1;
+  string readable_name = 2;
+}
+
+message HaveDuplicate { bool response = 1; }
+
+message RemoteMachineInfo {
+  string display_name = 1;
+  string user_name = 2;
+}
+
+message RemoteMachineAvatar { bytes avatar_chunk = 1; }
+
+message OpInfo {
+  string ident = 1;
+  uint64 timestamp = 2;
+  string readable_name = 3;
+}
+
+message TransferOpRequest {
+  OpInfo info = 1;
+  string sender_name = 2;
+  string receiver = 3;
+  uint64 size = 4;
+  uint64 count = 5;
+  string name_if_single = 6;
+  string mime_if_single = 7;
+  repeated string top_dir_basenames = 8;
+}
+
+message FileChunk {
+  string relative_path = 1;
+  uint32 file_type = 2;
+  bytes chunk = 3;
+  uint32 file_mode = 4;
+  uint64 time = 5;
+}
+
+message StopInfo { OpInfo info = 1; bool error = 2; }
+
+message VoidType {}
