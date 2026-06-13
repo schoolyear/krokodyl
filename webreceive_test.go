@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -138,6 +139,78 @@ func TestWebReceiverRejectsGet(t *testing.T) {
 	wr.handleUpload(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET upload = %d, want 405", rec.Code)
+	}
+}
+
+// End-to-end: a real server via newWebReceiver, a real HTTP upload carrying
+// the token in the header, file written + onFile fired, clean shutdown.
+func TestWebReceiverEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	gotCh := make(chan string, 1)
+	wr, err := newWebReceiver(dir, func(name string, size int64) {
+		select {
+		case gotCh <- name:
+		default:
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wr.close()
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("files", "from-phone.txt")
+	fw.Write([]byte("hello from the phone"))
+	mw.Close()
+
+	req, _ := http.NewRequest(http.MethodPost,
+		"http://127.0.0.1:"+itoa(wr.port)+"/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set(tokenHeader, wr.token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "from-phone.txt")); err != nil {
+		t.Errorf("file not written: %v", err)
+	}
+	select {
+	case name := <-gotCh:
+		if name != "from-phone.txt" {
+			t.Errorf("onFile name = %q", name)
+		}
+	default:
+		t.Error("onFile not called")
+	}
+
+	// A request with no token must be rejected by the real server too.
+	noTok, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:"+itoa(wr.port)+"/", nil)
+	r2, err := http.DefaultClient.Do(noTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != http.StatusForbidden {
+		t.Errorf("index without token = %d, want 403", r2.StatusCode)
+	}
+}
+
+func itoa(n int) string { return fmt.Sprintf("%d", n) }
+
+func TestClampUploadName(t *testing.T) {
+	long := strings.Repeat("a", 300) + ".txt"
+	got := clampUploadName(long)
+	if len(got) > maxUploadNameLen {
+		t.Errorf("clamped len %d exceeds %d", len(got), maxUploadNameLen)
+	}
+	if !strings.HasSuffix(got, ".txt") {
+		t.Errorf("clamp dropped the extension: %q", got)
 	}
 }
 

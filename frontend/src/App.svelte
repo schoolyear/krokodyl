@@ -115,6 +115,7 @@
   }
   // The phone-upload QR modal; non-null means the upload server is running.
   let phoneReceive: PhoneReceiveInfo | null = $state(null);
+  let phoneReceiveLoading = $state(false);
 
   // The most recent send still waiting for a receiver — its code is the one
   // thing the sender needs right now, so it gets the spotlight.
@@ -384,11 +385,15 @@
   }
 
   async function startPhoneReceive() {
+    if (phoneReceiveLoading) return; // guard against double-tap starting two servers
+    phoneReceiveLoading = true;
     try {
       phoneReceive = await StartPhoneReceive();
     } catch (error) {
       console.error('Could not start phone receive', error);
       showToast($_('phone.failed'), 'error');
+    } finally {
+      phoneReceiveLoading = false;
     }
   }
 
@@ -661,7 +666,7 @@
             {/if}
           </button>
 
-          <button class="offline-cta" onclick={startPhoneReceive}>
+          <button class="offline-cta" onclick={startPhoneReceive} disabled={phoneReceiveLoading}>
             <span aria-hidden="true">📱</span> {$_('phone.cta')}
           </button>
         </div>

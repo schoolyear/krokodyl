@@ -5,14 +5,16 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
@@ -29,28 +31,40 @@ import (
 // the shared Wi-Fi or the offline hotspot.
 
 const (
-	// Generous read header timeout guard; uploads themselves stream and are
-	// bounded by disk, not a byte cap (the app's whole point is big files).
 	uploadFieldName = "files"
+	// tokenHeader carries the gate token on the POST so it never lands in a URL
+	// (and thus not in browser history or a Referer header). The GET page URL
+	// still carries ?t= because the QR must open it; the POST uses the header.
+	tokenHeader = "X-Krokodyl-Token"
+	// readHeaderTimeout stops a slow-loris client from pinning a connection
+	// before its headers are even read (the token check can't run until then).
+	// The body itself is NOT time-capped — large uploads need to stream freely.
+	readHeaderTimeout = 10 * time.Second
+	idleTimeout       = 60 * time.Second
+	// maxUploadBytes is a generous per-request ceiling so a token holder can't
+	// fill the disk without bound, while still allowing very large transfers.
+	maxUploadBytes = 50 << 30 // 50 GiB
+	// maxUploadNameLen bounds a sanitized filename so it can't exceed common
+	// filesystem limits (most cap a path component at 255 bytes).
+	maxUploadNameLen = 200
 )
 
 // webReceiver owns the opt-in upload server. It is only listening between
-// StartPhoneReceive and StopPhoneReceive.
+// StartPhoneReceive and StopPhoneReceive. Fields are set once at construction
+// and never mutated, so no lock is needed.
 type webReceiver struct {
-	mu       sync.Mutex
-	listener net.Listener
-	srv      *http.Server
-	token    string
-	dest     string
-	port     int
-	// onFile is called after each file is fully written, so the app can record
-	// a transfer and notify the UI.
+	srv   *http.Server
+	token string
+	dest  string
+	port  int
+	// onFile is called after each file is fully written, with the actual name
+	// it was saved under, so the app can record a transfer and notify the UI.
 	onFile func(name string, size int64)
 }
 
 // newWebReceiver binds an ephemeral port on all interfaces (the phone must be
-// able to reach it) and starts serving. A 128-bit URL token gates every
-// request so another device on the LAN cannot upload without the QR.
+// able to reach it) and starts serving. A 128-bit token gates every request so
+// another device on the LAN cannot upload without the QR.
 func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, error) {
 	if onFile == nil {
 		onFile = func(string, int64) {}
@@ -69,30 +83,34 @@ func newWebReceiver(dest string, onFile func(string, int64)) (*webReceiver, erro
 	}
 
 	wr := &webReceiver{
-		listener: ln,
-		token:    hex.EncodeToString(tok),
-		dest:     dest,
-		port:     ln.Addr().(*net.TCPAddr).Port,
-		onFile:   onFile,
+		token:  hex.EncodeToString(tok),
+		dest:   dest,
+		port:   ln.Addr().(*net.TCPAddr).Port,
+		onFile: onFile,
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", wr.handleIndex)
 	mux.HandleFunc("/upload", wr.handleUpload)
-	wr.srv = &http.Server{Handler: mux}
+	wr.srv = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       idleTimeout,
+	}
 	go func() {
-		if err := wr.srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := wr.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Warn("phone-receive server stopped")
 		}
 	}()
 	return wr, nil
 }
 
-// checkToken constant-time-compares the request token against ours.
+// checkToken constant-time-compares the request token (header preferred, query
+// fallback for the GET page) against ours.
 func (wr *webReceiver) checkToken(r *http.Request) bool {
-	got := r.URL.Query().Get("t")
+	got := r.Header.Get(tokenHeader)
 	if got == "" {
-		got = r.FormValue("t")
+		got = r.URL.Query().Get("t")
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(wr.token)) == 1
 }
@@ -102,9 +120,9 @@ func (wr *webReceiver) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	// Keep the token-bearing URL out of the browser cache.
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// Minimal, dependency-free mobile upload page. The token is carried in the
-	// form action so the POST is gated too.
 	fmt.Fprintf(w, uploadPageHTML, wr.token)
 }
 
@@ -117,6 +135,7 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
 	reader, err := r.MultipartReader()
 	if err != nil {
 		http.Error(w, "expected multipart upload", http.StatusBadRequest)
@@ -126,7 +145,7 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 	saved := 0
 	for {
 		part, err := reader.NextPart()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -134,9 +153,10 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if part.FormName() != uploadFieldName || part.FileName() == "" {
-			continue // skip non-file fields (e.g. the token field)
+			part.Close()
+			continue // skip non-file fields
 		}
-		n, err := wr.savePart(part.FileName(), part)
+		name, n, err := wr.savePart(part.FileName(), part)
 		part.Close()
 		if err != nil {
 			logrus.WithError(err).Warn("phone-receive: could not save uploaded file")
@@ -144,7 +164,7 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		saved++
-		wr.onFile(filepath.Base(part.FileName()), n)
+		wr.onFile(name, n)
 	}
 	if saved == 0 {
 		http.Error(w, "no files in upload", http.StatusBadRequest)
@@ -155,55 +175,53 @@ func (wr *webReceiver) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // savePart streams one uploaded file into the destination under a sanitized,
-// collision-free name. Streaming (not buffering) keeps memory flat for big
-// files; tmp+rename avoids leaving a half-written file at the final name.
-func (wr *webReceiver) savePart(rawName string, src io.Reader) (int64, error) {
+// collision-free name (returned), streaming to a tmp file then renaming so a
+// half-written upload never appears at the final name.
+func (wr *webReceiver) savePart(rawName string, src io.Reader) (string, int64, error) {
 	name, err := safeUploadName(wr.dest, rawName)
 	if err != nil {
-		return 0, err
+		return "", 0, fmt.Errorf("webreceive: choose name for %q: %w", rawName, err)
 	}
 	final := filepath.Join(wr.dest, name)
 	tmp := final + ".krokodyl-part"
 	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return 0, err
+		return "", 0, fmt.Errorf("webreceive: create %q: %w", name, err)
 	}
 	n, err := io.Copy(out, src)
 	if err != nil {
 		out.Close()
 		os.Remove(tmp)
-		return 0, err
+		return "", 0, fmt.Errorf("webreceive: write %q: %w", name, err)
 	}
 	if err := out.Close(); err != nil {
 		os.Remove(tmp)
-		return 0, err
+		return "", 0, fmt.Errorf("webreceive: close %q: %w", name, err)
 	}
 	if err := os.Rename(tmp, final); err != nil {
 		os.Remove(tmp)
-		return 0, err
+		return "", 0, fmt.Errorf("webreceive: finalize %q: %w", name, err)
 	}
-	return n, nil
+	return name, n, nil
 }
 
 func (wr *webReceiver) close() {
-	wr.mu.Lock()
-	srv := wr.srv
-	wr.mu.Unlock()
-	if srv != nil {
-		_ = srv.Close()
+	if wr.srv != nil {
+		_ = wr.srv.Close()
 	}
 }
 
 // safeUploadName turns an untrusted uploaded filename into a safe, unique name
-// inside dest: strips any path, sanitizes display chars, rejects traversal,
-// and de-duplicates with a " (n)" suffix so an upload never clobbers an
-// existing file.
+// inside dest: strips any path, sanitizes display chars, length-caps, rejects
+// traversal, and de-duplicates with a " (n)" suffix so an upload never
+// clobbers an existing file.
 func safeUploadName(dest, raw string) (string, error) {
 	base := filepath.Base(filepath.FromSlash(raw))
 	base = strings.TrimSpace(sanitizeDisplayName(base))
 	if base == "" || base == "." || base == ".." {
 		base = "received-file"
 	}
+	base = clampUploadName(base)
 	if err := validateRelPath(base); err != nil {
 		return "", err
 	}
@@ -211,11 +229,29 @@ func safeUploadName(dest, raw string) (string, error) {
 	stem := strings.TrimSuffix(base, ext)
 	name := base
 	for i := 1; ; i++ {
-		if _, err := os.Stat(filepath.Join(dest, name)); os.IsNotExist(err) {
+		_, err := os.Stat(filepath.Join(dest, name))
+		if errors.Is(err, fs.ErrNotExist) {
 			return name, nil
+		}
+		if err != nil {
+			// A non-"not exists" stat error (permissions, I/O) must not spin
+			// the loop forever — surface it.
+			return "", fmt.Errorf("stat %q: %w", name, err)
 		}
 		name = fmt.Sprintf("%s (%d)%s", stem, i, ext)
 	}
+}
+
+// clampUploadName bounds a filename's length while preserving its extension.
+func clampUploadName(name string) string {
+	if len(name) <= maxUploadNameLen {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if len(ext) >= maxUploadNameLen {
+		return name[:maxUploadNameLen]
+	}
+	return name[:maxUploadNameLen-len(ext)] + ext
 }
 
 // phoneReceiveURL builds the address the phone opens: the best real-LAN IP
@@ -243,13 +279,6 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 		return PhoneReceiveInfo{}, err
 	}
 
-	a.mu.Lock()
-	if a.webRecv != nil {
-		a.webRecv.close()
-		a.webRecv = nil
-	}
-	a.mu.Unlock()
-
 	wr, err := newWebReceiver(dest, func(name string, size int64) {
 		a.tm.add(FileTransfer{
 			ID:       "receive-web-" + uuid.NewString(),
@@ -264,9 +293,15 @@ func (a *App) StartPhoneReceive() (PhoneReceiveInfo, error) {
 		return PhoneReceiveInfo{}, err
 	}
 
+	// Atomic swap: store the new receiver and close any previous one outside
+	// the lock, so two concurrent starts can't leak an untracked server.
 	a.mu.Lock()
+	old := a.webRecv
 	a.webRecv = wr
 	a.mu.Unlock()
+	if old != nil {
+		old.close()
+	}
 
 	url := phoneReceiveURL(wr.port, wr.token)
 	info := PhoneReceiveInfo{URL: url}
@@ -304,16 +339,17 @@ const uploadPageHTML = `<!doctype html>
 </style></head>
 <body><div class="card">
  <h1>🐊 Send to krokodyl</h1>
- <form id="f" method="post" action="/upload?t=%[1]s" enctype="multipart/form-data">
+ <form id="f" method="post" enctype="multipart/form-data">
    <input type="file" name="files" multiple required>
    <button type="submit">Send</button>
  </form>
  <div id="status" role="status" aria-live="polite"></div>
  <script>
+  var TOKEN='%[1]s';
   var f=document.getElementById('f'),s=document.getElementById('status');
   f.addEventListener('submit',function(e){
     e.preventDefault();s.textContent='Sending…';
-    fetch(f.action,{method:'POST',body:new FormData(f)})
+    fetch('/upload',{method:'POST',headers:{'X-Krokodyl-Token':TOKEN},body:new FormData(f)})
       .then(function(r){return r.ok?r.text():Promise.reject(r.status)})
       .then(function(t){s.textContent='✅ '+t})
       .catch(function(){s.textContent='❌ Upload failed'});
