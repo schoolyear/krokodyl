@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -15,13 +16,19 @@ func newTestLocalSend(t *testing.T, accept bool) (*localSendReceiver, string, *[
 	t.Helper()
 	dir := t.TempDir()
 	var got []string
+	var mu sync.Mutex
 	r := &localSendReceiver{
-		dest:     dir,
-		self:     lsDeviceInfo{Alias: "krokodyl", Version: localSendVersion, DeviceType: "desktop", Fingerprint: "selffp", Port: localSendPort, Protocol: "http"},
-		onOffer:  func(string, string, []string, int64) bool { return accept },
-		onFile:   func(name string, size int64) { got = append(got, name) },
-		sessions: make(map[string]*lsSession),
-		stopCh:   make(chan struct{}),
+		dest:    dir,
+		self:    lsDeviceInfo{Alias: "krokodyl", Version: localSendVersion, DeviceType: "desktop", Fingerprint: "selffp", Port: localSendPort, Protocol: "http"},
+		onOffer: func(string, string, []string, int64) bool { return accept },
+		onFile: func(name string, size int64) {
+			mu.Lock()
+			got = append(got, name)
+			mu.Unlock()
+		},
+		sessions:    make(map[string]*lsSession),
+		registerSem: make(chan struct{}, 8),
+		stopCh:      make(chan struct{}),
 	}
 	return r, dir, &got
 }
@@ -139,6 +146,41 @@ func TestLocalSendUploadRejectsBadToken(t *testing.T) {
 		"/api/localsend/v2/upload?sessionId=nope&fileId=f1&token=x", strings.NewReader("x")))
 	if up2.Code != http.StatusForbidden {
 		t.Errorf("unknown session = %d, want 403", up2.Code)
+	}
+}
+
+// Two files uploaded concurrently in one session must not race on the shared
+// session maps (regression guard for the copy-under-lock fix). Run with -race.
+func TestLocalSendConcurrentUploadsSameSession(t *testing.T) {
+	r, dir, _ := newTestLocalSend(t, true)
+	rec := httptest.NewRecorder()
+	r.handlePrepareUpload(rec, httptest.NewRequest(http.MethodPost, "/x",
+		prepareBody(map[string]lsFileMeta{
+			"f1": {ID: "f1", FileName: "one.bin", Size: 3},
+			"f2": {ID: "f2", FileName: "two.bin", Size: 3},
+		})))
+	var resp lsPrepareResponse
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+
+	done := make(chan int, 2)
+	for _, fid := range []string{"f1", "f2"} {
+		go func(fileID string) {
+			up := httptest.NewRecorder()
+			r.handleUpload(up, httptest.NewRequest(http.MethodPost,
+				"/api/localsend/v2/upload?sessionId="+resp.SessionID+"&fileId="+fileID+"&token="+resp.Files[fileID],
+				strings.NewReader("abc")))
+			done <- up.Code
+		}(fid)
+	}
+	for i := 0; i < 2; i++ {
+		if code := <-done; code != http.StatusOK {
+			t.Errorf("concurrent upload returned %d", code)
+		}
+	}
+	for _, name := range []string{"one.bin", "two.bin"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s not written: %v", name, err)
+		}
 	}
 }
 

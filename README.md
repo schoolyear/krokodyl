@@ -48,6 +48,8 @@ There is **no krokodyl phone app**, and Apple AirDrop / Android Quick Share are 
 
 It works from any phone with no app install. The server runs only while the dialog is open, every request is gated by a single-use 128-bit token (carried in a request header, not the URL), and uploaded filenames are sanitized against path traversal before anything is written.
 
+**Already use [LocalSend](https://localsend.org)?** While "Receive from a phone" is on, krokodyl also speaks the open LocalSend protocol, so it shows up in the LocalSend app (iOS/Android/desktop) — pick krokodyl there and send, no QR scan needed. Each incoming transfer still asks you to accept it first, and files land in your downloads folder. (Native Apple AirDrop / Android Quick Share remain unsupported — they're closed protocols; LocalSend is the open, cross-platform equivalent.)
+
 ## Installation
 
 Download the latest build for your platform from the [releases page](../../releases).

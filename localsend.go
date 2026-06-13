@@ -6,12 +6,14 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,6 +90,14 @@ type localSendReceiver struct {
 	mu       sync.Mutex
 	sessions map[string]*lsSession
 
+	// offerBusy enforces one pending accept prompt at a time, so a hostile LAN
+	// device can't spam prompts / pile up blocked goroutines.
+	offerBusy atomic.Bool
+	// registerSem bounds concurrent register-back POSTs against a multicast
+	// flood; client is reused to avoid per-call transport/port churn.
+	registerSem chan struct{}
+	client      *http.Client
+
 	stopOnce sync.Once
 	stopCh   chan struct{}
 }
@@ -127,10 +137,12 @@ func newLocalSendReceiver(dest, alias string, onOffer func(string, string, []str
 			Protocol:    "http",
 			Download:    false,
 		},
-		onOffer:  onOffer,
-		onFile:   onFile,
-		sessions: make(map[string]*lsSession),
-		stopCh:   make(chan struct{}),
+		onOffer:     onOffer,
+		onFile:      onFile,
+		sessions:    make(map[string]*lsSession),
+		registerSem: make(chan struct{}, 8),
+		client:      &http.Client{Timeout: 4 * time.Second},
+		stopCh:      make(chan struct{}),
 	}
 
 	mux := http.NewServeMux()
@@ -145,7 +157,7 @@ func newLocalSendReceiver(dest, alias string, onOffer func(string, string, []str
 		IdleTimeout:       idleTimeout,
 	}
 	go func() {
-		if err := r.srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := r.srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logrus.WithError(err).Warn("localsend server stopped")
 		}
 	}()
@@ -166,11 +178,19 @@ func writeJSON(w http.ResponseWriter, code int, v interface{}) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-func (r *localSendReceiver) handleInfo(w http.ResponseWriter, _ *http.Request) {
+func (r *localSendReceiver) handleInfo(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	writeJSON(w, http.StatusOK, r.self)
 }
 
-func (r *localSendReceiver) handleRegister(w http.ResponseWriter, _ *http.Request) {
+func (r *localSendReceiver) handleRegister(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	// We don't need the peer's body to function; reply with our own info so the
 	// peer can reach us. (Bodies are bounded by ReadHeaderTimeout + the default
 	// server limits.)
@@ -191,6 +211,15 @@ func (r *localSendReceiver) handlePrepareUpload(w http.ResponseWriter, req *http
 		http.Error(w, "invalid file set", http.StatusBadRequest)
 		return
 	}
+
+	// One pending accept prompt at a time (matches the nearby control channel)
+	// — a flood of prepare-uploads can't spam prompts or pile up blocked
+	// goroutines.
+	if !r.offerBusy.CompareAndSwap(false, true) {
+		http.Error(w, "busy", http.StatusTooManyRequests)
+		return
+	}
+	defer r.offerBusy.Store(false)
 
 	names := make([]string, 0, len(pr.Files))
 	var total int64
@@ -221,14 +250,31 @@ func (r *localSendReceiver) handlePrepareUpload(w http.ResponseWriter, req *http
 	for id, f := range pr.Files {
 		tok := randomFingerprint()
 		sess.tokens[id] = tok
-		sess.names[id] = f.FileName
+		// Store the sanitized name so what was shown to the user is what gets
+		// saved (saveUploadedFile re-validates regardless).
+		sess.names[id] = sanitizeDisplayName(f.FileName)
 		resp.Files[id] = tok
 	}
 	r.mu.Lock()
 	r.sessions[resp.SessionID] = sess
 	r.mu.Unlock()
+	r.expireSession(resp.SessionID)
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// expireSession drops an accepted session after a window if its uploads never
+// arrive, so abandoned sessions don't accumulate for the receiver's lifetime.
+func (r *localSendReceiver) expireSession(id string) {
+	go func() {
+		select {
+		case <-time.After(5 * time.Minute):
+		case <-r.stopCh:
+		}
+		r.mu.Lock()
+		delete(r.sessions, id)
+		r.mu.Unlock()
+	}()
 }
 
 func (r *localSendReceiver) handleUpload(w http.ResponseWriter, req *http.Request) {
@@ -239,27 +285,35 @@ func (r *localSendReceiver) handleUpload(w http.ResponseWriter, req *http.Reques
 	q := req.URL.Query()
 	sessionID, fileID, token := q.Get("sessionId"), q.Get("fileId"), q.Get("token")
 
+	// Copy what we need out under the lock; sess maps are shared across
+	// concurrent uploads in the same session, so never touch them unlocked.
 	r.mu.Lock()
 	sess := r.sessions[sessionID]
+	var want, rawName string
+	var known bool
+	if sess != nil {
+		want, known = sess.tokens[fileID]
+		rawName = sess.names[fileID]
+	}
 	r.mu.Unlock()
+
 	if sess == nil {
 		http.Error(w, "unknown session", http.StatusForbidden)
 		return
 	}
-	want, ok := sess.tokens[fileID]
-	if !ok || subtle.ConstantTimeCompare([]byte(token), []byte(want)) != 1 {
+	if !known || subtle.ConstantTimeCompare([]byte(token), []byte(want)) != 1 {
 		http.Error(w, "invalid token", http.StatusForbidden)
 		return
 	}
 
 	req.Body = http.MaxBytesReader(w, req.Body, localSendMaxUploadBytes)
-	name, n, err := saveUploadedFile(r.dest, sess.names[fileID], req.Body)
+	name, n, err := saveUploadedFile(r.dest, rawName, req.Body)
 	if err != nil {
 		logrus.WithError(err).Warn("localsend: could not save uploaded file")
 		http.Error(w, "could not save file", http.StatusInternalServerError)
 		return
 	}
-	// One token per file: consume it so a token can't be replayed.
+	// One token per file: consume it under the lock so it can't be replayed.
 	r.mu.Lock()
 	delete(sess.tokens, fileID)
 	if len(sess.tokens) == 0 {
@@ -331,7 +385,16 @@ func (r *localSendReceiver) readAnnouncements(conn *net.UDPConn) {
 		if info.Fingerprint == r.self.Fingerprint {
 			continue // our own announcement
 		}
-		go r.registerWith(src.IP.String(), info.Port)
+		// Bound concurrent register-backs so a multicast flood can't spawn
+		// unbounded goroutines / outbound POSTs; drop when saturated.
+		select {
+		case r.registerSem <- struct{}{}:
+			go func(host string, port int) {
+				defer func() { <-r.registerSem }()
+				r.registerWith(host, port)
+			}(src.IP.String(), info.Port)
+		default:
+		}
 	}
 }
 
@@ -407,17 +470,23 @@ func (a *App) resolveLocalSendOffer(offerID string, accept bool) {
 	}
 }
 
-// registerWith tells a freshly-discovered peer about us over HTTP.
+// registerWith tells a freshly-discovered peer about us over HTTP. The target
+// is restricted to a private-LAN address so a spoofed announcement can't turn
+// register-back into an arbitrary-host port probe (SSRF) — LocalSend lives on
+// the local network.
 func (r *localSendReceiver) registerWith(host string, port int) {
 	if port <= 0 || port > 65535 {
+		return
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsPrivate() {
 		return
 	}
 	body := r.self
 	body.Announce = false
 	data, _ := json.Marshal(body)
 	url := "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/api/localsend/v2/register"
-	client := &http.Client{Timeout: 4 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
+	resp, err := r.client.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return
 	}
