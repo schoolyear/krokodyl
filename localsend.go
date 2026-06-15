@@ -825,7 +825,10 @@ func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
-		a.failTransfer(id, fmt.Sprintf("could not reach %s", peer.Name))
+		// Surface the real cause: TLS pin mismatch, connection refused, timeout,
+		// wrong address — they need different fixes, so don't hide it.
+		logrus.WithError(err).Warnf("localsend: prepare-upload to %s (%s:%d) failed", peer.Name, host, peer.Port)
+		a.failTransfer(id, fmt.Sprintf("could not reach %s: %v", peer.Name, err))
 		return
 	}
 	switch {
