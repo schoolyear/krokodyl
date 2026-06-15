@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -472,16 +473,30 @@ func multicastInterfaces() []net.Interface {
 		iface net.Interface
 		rank  int
 	}
-	var got []ranked
+	var real, any []ranked
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 ||
 			iface.Flags&net.FlagLoopback != 0 ||
 			iface.Flags&net.FlagMulticast == 0 {
 			continue
 		}
-		if ip := firstIPv4(iface); ip != nil {
-			got = append(got, ranked{iface, addrRank(ip.String())})
+		ip := firstIPv4(iface)
+		if ip == nil {
+			continue
 		}
+		r := ranked{iface, addrRank(ip.String())}
+		any = append(any, r)
+		if !isVirtualInterface(iface.Name) {
+			real = append(real, r)
+		}
+	}
+	// Prefer real adapters: announcing on Hyper-V/WSL/NAT virtual switches both
+	// fails to reach the phone AND makes krokodyl show up several times in
+	// same-host apps (one entry per source IP). Fall back to all only if nothing
+	// looked real, so we never end up announcing on nothing.
+	got := real
+	if len(got) == 0 {
+		got = any
 	}
 	sort.SliceStable(got, func(i, j int) bool { return got[i].rank < got[j].rank })
 	out := make([]net.Interface, len(got))
@@ -489,6 +504,23 @@ func multicastInterfaces() []net.Interface {
 		out[i] = got[i].iface
 	}
 	return out
+}
+
+// isVirtualInterface heuristically flags Hyper-V / WSL / VM / VPN / Docker style
+// adapters by name, so multicast presence isn't announced on networks the phone
+// can't reach.
+func isVirtualInterface(name string) bool {
+	n := strings.ToLower(name)
+	for _, v := range []string{
+		"vethernet", "hyper-v", "virtual", "vmware", "vbox", "wsl",
+		"loopback", "bluetooth", "docker", "vpn", "tailscale", "zerotier",
+		"default switch", "wan miniport",
+	} {
+		if strings.Contains(n, v) {
+			return true
+		}
+	}
+	return false
 }
 
 // firstIPv4 returns the first non-loopback, non-link-local IPv4 address bound
@@ -778,6 +810,7 @@ func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []
 		host = peer.Addrs[0]
 	}
 	base := "https://" + net.JoinHostPort(host, strconv.Itoa(peer.Port)) + "/api/localsend/v2/"
+	logrus.Infof("localsend: sending %d file(s) to %q at %s:%d (prepare-upload)", len(paths), peer.Name, host, peer.Port)
 
 	// prepare-upload — the peer prompts its user here; bound the wait so a
 	// never-answered prompt doesn't hang the transfer forever.
@@ -817,6 +850,7 @@ func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []
 		return
 	}
 
+	logrus.Infof("localsend: %q accepted, uploading %d file(s)", peer.Name, len(prep.Files))
 	a.tm.update(id, func(t *FileTransfer) { t.Status = FileTransferStatusSending })
 
 	var sent int64

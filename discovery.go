@@ -29,6 +29,9 @@ const (
 
 	announceInterval = 2 * time.Second
 	peerTTL          = 5 * time.Second
+	// LocalSend phones announce less frequently (and over a lossier path), so
+	// give them a longer grace before sweeping or they flicker in/out.
+	localSendPeerTTL = 30 * time.Second
 	sweepInterval    = 1 * time.Second
 	// After a peer says goodbye, ignore any re-add for this long. UDP can
 	// deliver a normal announcement that was already in flight just after
@@ -243,12 +246,19 @@ func (r *peerRegistry) observe(id discoveryIdentity, addr string, now time.Time)
 	}
 }
 
-// sweep drops peers not seen within peerTTL.
+// sweep drops peers not seen within their TTL. LocalSend devices announce less
+// often than krokodyl peers (and over a noisier multicast path), so they get a
+// longer grace before being dropped — otherwise they flicker in and out of the
+// list between announces.
 func (r *peerRegistry) sweep(now time.Time) {
 	r.mu.Lock()
 	changed := false
 	for id, p := range r.peers {
-		if now.Sub(p.lastSeen) > peerTTL {
+		ttl := peerTTL
+		if p.Kind == "localsend" {
+			ttl = localSendPeerTTL
+		}
+		if now.Sub(p.lastSeen) > ttl {
 			delete(r.peers, id)
 			changed = true
 		}
