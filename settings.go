@@ -25,6 +25,10 @@ type appSettings struct {
 	// MAC) used to recognize "the same machine" across restarts and name
 	// changes when repeating a transfer.
 	MachineID string `json:"machineId,omitempty"`
+	// DeviceName is the friendly "Adjective Animal" name shown to peers. Kept
+	// stable across launches so krokodyl doesn't appear as a brand-new device
+	// (and a fresh LocalSend entry) every time it restarts.
+	DeviceName string `json:"deviceName,omitempty"`
 	// Pointer so "never set" (default visible) is distinct from "off".
 	NearbyVisible *bool `json:"nearbyVisible,omitempty"`
 	// Partials tracks preserved partial-transfer directories so abandoned
@@ -108,6 +112,24 @@ func ensureMachineID(path string) string {
 		logrus.WithError(err).Warn("could not persist machine id")
 	}
 	return id
+}
+
+// ensureDeviceName returns the friendly device name, generating and persisting
+// one on first use so it stays stable across restarts. A persistence failure is
+// non-fatal: a fresh random name is still usable for this run.
+func ensureDeviceName(path string) string {
+	name := ""
+	err := updateSettings(path, func(s *appSettings) {
+		if s.DeviceName == "" {
+			s.DeviceName = randomDeviceName()
+		}
+		name = s.DeviceName
+	})
+	if err != nil {
+		logrus.WithError(err).Warn("could not persist device name")
+		return randomDeviceName()
+	}
+	return name
 }
 
 // recordPartial remembers a preserved partial dir (best-effort).

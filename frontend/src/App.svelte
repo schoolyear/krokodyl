@@ -663,9 +663,11 @@
                 {/each}
               </ul>
             {/if}
-            <button class="offline-cta" onclick={openOffline}>
-              <span aria-hidden="true">📡</span> {$_('offline.cta')}
-            </button>
+            {#if !discoveryAvailable}
+              <button class="offline-cta" onclick={openOffline}>
+                <span aria-hidden="true">📡</span> {$_('offline.cta')}
+              </button>
+            {/if}
           </div>
 
           <div

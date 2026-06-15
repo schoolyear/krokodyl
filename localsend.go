@@ -135,7 +135,9 @@ func newLocalSendReceiver(dest, alias string, port int, registry *peerRegistry, 
 	if onFile == nil {
 		onFile = func(string, int64) {}
 	}
-	cert, err := ephemeralCertificate()
+	// Persistent (not ephemeral) cert: a stable fingerprint means LocalSend sees
+	// ONE krokodyl device across restarts, not a fresh entry every launch.
+	cert, err := persistentCertificate()
 	if err != nil {
 		return nil, fmt.Errorf("localsend: certificate: %w", err)
 	}

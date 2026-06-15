@@ -160,6 +160,7 @@ func (a *App) startNearby() {
 	a.deviceName = randomDeviceName()
 	if path, err := settingsPath(); err == nil {
 		a.machineID = ensureMachineID(path)
+		a.deviceName = ensureDeviceName(path)
 	}
 	logrus.Infof("nearby identity: %q (host %s)", a.deviceName, hostname)
 
