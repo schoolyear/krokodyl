@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: go.mod + package.json | Token estimate: ~570 -->
+<!-- Generated: 2026-06-15 (v0.17.3, feat/offline-bluetooth-discovery) | Files scanned: go.mod + package.json | Token estimate: ~600 -->
 # Dependencies
 
 ## External services
@@ -11,8 +11,10 @@ github.com/schollz/croc/v10    v10.4.4  P2P transfer (PAKE, relay, chunked resum
 github.com/schollz/peerdiscovery v1.7.6 LAN multicast discovery (:42791)
 github.com/sirupsen/logrus     v1.9.4   structured logging (file sink)
 github.com/google/uuid         v1.6.0   MachineID / transfer ids
+golang.org/x/net               v0.54.0  ipv4.PacketConn — Windows-correct multicast RX/TX (LocalSend)
+golang.org/x/sys               v0.44.0  syscall (SO_REUSEADDR; firewall netsh elevation helpers)
 ```
-Notable indirect (via croc): pake/v3 (PAKE), go-qrcode, machineid, progressbar. crypto/tls + crypto/ecdsa (stdlib) for the nearby control channel.
+Notable indirect (via croc): pake/v3 (PAKE), go-qrcode, machineid, progressbar. crypto/tls + crypto/ecdsa (stdlib) for the nearby + LocalSend control channels.
 
 ## Frontend (npm)
 ```

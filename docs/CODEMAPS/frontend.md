@@ -1,4 +1,4 @@
-<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: 17 src | Token estimate: ~750 -->
+<!-- Generated: 2026-06-15 (v0.17.3, feat/offline-bluetooth-discovery) | Files scanned: 17 src | Token estimate: ~820 -->
 # Frontend (Svelte 5 + TS + Vite 6)
 
 SPA bundled into the Go binary. Svelte 5 runes (`$state`/`$derived`), no Redux/Pinia.
@@ -6,24 +6,24 @@ SPA bundled into the Go binary. Svelte 5 runes (`$state`/`$derived`), no Redux/P
 ## Component tree
 ```
 main.ts  mount(App, #app)
-└─ App.svelte (1736 lines — most UI/state here)
+└─ App.svelte (~1900 lines — most UI/state here)
    ├─ TitleBar.svelte        brand · ThemeSwitcher · lang <select>
-   │   └─ Windows: native chrome strip (min/max/close, --wails-draggable)
-   │   └─ macOS: traffic-light padding
    ├─ ThemeSwitcher.svelte   ☀️/🌙 toggle
+   ├─ Firewall banner        (Windows, when FirewallNeedsFix) → "Fix" → FixFirewall (UAC)
    ├─ Tabs: Send | Receive   (ARIA tablist, roving tabindex)
-   │   Send:    code spotlight · nearby peer list · visibility toggle
+   ├─ Phone-receive bar       persistent above both tabs → startPhoneReceive (always-on)
+   │   Send:    code spotlight · nearby peer list (LocalSend peers badged) · visibility toggle
    │   Receive: code input (no auto-submit) · destination picker
-   ├─ Transfer list          status badge · progress bar · cancel/resend
-   └─ Modals (use:modalDialog focus-trap): overwrite · nearby offer ·
-      clear-history · verify (offer-mismatch keep/discard) · resend-confirm
-      (target name + addr check)
+   ├─ Transfer list          status badge · progress bar · cancel/resend · "Open in folder" (completed → RevealInExplorer)
+   └─ Modals (use:modalDialog focus-trap): overwrite · nearby offer · phone-QR ·
+      clear-history · verify (offer-mismatch keep/discard) · resend-confirm · offline-guidance
    └─ Toast (role=alert/status, aria-live)
 ```
 
 ## State
 ```
-$state   transfers, nearbyPeers, activeTab, modals, toast, nearbyVisible, buildStamp
+$state   transfers, nearbyPeers, activeTab, modals, toast, nearbyVisible, buildStamp,
+         phoneReceive, firewallBlocked, firewallFixing
 $derived waitingSend, sortedPeers
 stores/theme.ts  custom writable → localStorage + prefers-color-scheme; class on <html>
 ```
@@ -32,9 +32,11 @@ stores/theme.ts  custom writable → localStorage + prefers-color-scheme; class 
 ```
 calls:   import { SendFiles, ReceiveFile, ... } from wailsjs/go/main/App
 events:  EventsOn(name, cb) from wailsjs/runtime/runtime
-models:  wailsjs/go/models.ts  FileTransfer · NearbyPeer · NearbyPrefs · ResendOutcome
+models:  wailsjs/go/models.ts  FileTransfer(+path) · NearbyPeer(+kind) · NearbyPrefs · ResendOutcome · PhoneReceiveInfo
+extra methods: StartPhoneReceive · FirewallNeedsFix · FixFirewall · RevealInExplorer
 ```
 Subscribed events: `transfer:updated`, `transfer:overwrite`, `transfer:verify`, `nearby:updated`, `nearby:state`, `nearby:offer`, `transfer:cleared`.
+LocalSend peers carry `kind:"localsend"` (badged in UI; same send click path, backend routes by kind).
 Peer resend is two-phase: `ResendTransfer` → `needsConfirm` modal → `ConfirmResend`.
 
 ## Data flow

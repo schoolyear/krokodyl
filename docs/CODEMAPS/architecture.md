@@ -1,7 +1,7 @@
-<!-- Generated: 2026-06-13 (v0.17.3) | Files scanned: ~50 | Token estimate: ~800 -->
+<!-- Generated: 2026-06-15 (v0.17.3, feat/offline-bluetooth-discovery) | Files scanned: ~55 | Token estimate: ~900 -->
 # Architecture
 
-Type: single cross-platform desktop app. Wails v2 (Go backend + Svelte 5 webview frontend, one binary). P2P transport = croc.
+Type: single cross-platform desktop app. Wails v2 (Go backend + Svelte 5 webview frontend, one binary). P2P transport = croc; cross-app interop = LocalSend v2 + a token-gated HTTPS web/QR upload.
 
 ## Process model — one binary, two modes
 ```
@@ -38,6 +38,15 @@ netaddr.go    rank real-LAN > virtual; sender tries candidates real-first (4s ea
 Trust model: pinning authenticates the channel, not the identity — human
 confirmation is the backstop (offer prompt, verify prompt, resend confirm).
 
+## Cross-app receive (tiered) — every path → ONE pipeline
+```
+Tier 1  webreceive.go  phone browser/QR → token-gated HTTPS upload (any phone, incl. AirDrop/QuickShare users)
+Tier 2  localsend.go   LocalSend v2 (multicast 224.0.0.167:53317 + HTTP), bidirectional, listed in Nearby Devices
+        gated: kdeconnect.go, warpinator.go (off by default)
+Tier 3  closed protocols (AirDrop/QuickShare native) — NOT attempted
+all → discovery → nearby:offer consent → saveUploadedFile (path-stripped, traversal-rejected, deduped)
+```
+
 ## Service boundaries (Go, package main, repo root)
 | Concern | Files |
 |---|---|
@@ -48,7 +57,9 @@ confirmation is the backstop (offer prompt, verify prompt, resend confirm).
 | Transfer state | transfers.go |
 | Resume staging | staging.go |
 | LAN discovery + control | discovery.go, nearby.go, netaddr.go, names.go |
-| Persistence | settings.go, history.go |
+| Cross-app receive/send | webreceive.go, localsend.go (gated: kdeconnect.go, warpinator.go) |
+| Persistence + identity | settings.go, history.go, selfcert.go |
+| Per-OS (build-tagged) | firewall_*.go, reveal_*.go, reuseaddr_*.go |
 | Frontend | frontend/src |
 
 ## Key invariants
@@ -60,5 +71,9 @@ confirmation is the backstop (offer prompt, verify prompt, resend confirm).
 - Peer resend is two-phase: `ResendTransfer` → NeedsConfirm → `ConfirmResend`.
 - Peer display strings pass `sanitizeDisplayName` at decode; settings writes
   go through `updateSettings` (settingsMu, atomic tmp+rename).
+- LocalSend fingerprint is UPPERCASE hex — pin case-insensitively, announce uppercase
+  (lowercasing breaks all krokodyl↔LocalSend pinning).
+- Stable identity persisted (DeviceName + self-cert.pem) so krokodyl isn't a new
+  LocalSend device each launch. Windows multicast RX needs `0.0.0.0`+JoinGroup.
 
 See: [backend.md](backend.md) · [frontend.md](frontend.md) · [data.md](data.md) · [dependencies.md](dependencies.md)

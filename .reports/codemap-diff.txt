@@ -1,43 +1,55 @@
-codemap scan — 2026-06-13 (previous: 2026-06-12 initial)
+codemap scan — 2026-06-15 (previous: 2026-06-13)
 =========================================================
-mode: IN-PLACE UPDATE (structural drift well under 30% — same architecture,
-v0.17.3 audit-cycle additions)
+branch: feat/offline-bluetooth-discovery (base v0.17.3)
+mode: IN-PLACE UPDATE (additive; same core architecture, < 30% drift per file)
 
 updated:
-  docs/CODEMAPS/architecture.md   +trust-model note, verify flow, 3 invariants
-  docs/CODEMAPS/backend.md        +ConfirmResend, transfer:verify, prompt-UUID
-                                  plumbing, emitEvent, fresh LOC, test notes
-  docs/CODEMAPS/frontend.md       +verify & resend-confirm modals, event list,
-                                  contrast tokens, lang sync, 1736 LOC
-  docs/CODEMAPS/data.md           +receiveExpectation/mismatch check, TLS 1.3,
-                                  name sanitizing, offer backoff, settingsMu
-  docs/CODEMAPS/dependencies.md   +vuln posture (govulncheck clean, npm 5
-                                  build-toolchain-only advisories)
+  docs/CODEMAPS/architecture.md   +cross-app receive tier table, boundaries rows,
+                                  2 invariants (LocalSend UPPERCASE fp, stable identity)
+  docs/CODEMAPS/backend.md        +LocalSend send + receive servers, new App methods,
+                                  selfcert/firewall/reveal files, refreshed LOC
+  docs/CODEMAPS/frontend.md       +firewall banner, phone-receive bar, reveal button,
+                                  LocalSend badge, new bridge methods, ~1900 LOC
+  docs/CODEMAPS/data.md           +DeviceName, FileTransfer.path, NearbyPeer.kind,
+                                  LocalSend v2 protocol, self-cert.pem
+  docs/CODEMAPS/dependencies.md   +golang.org/x/net, golang.org/x/sys (now direct)
 
-source drift since last scan (v0.17.2 → v0.17.3, PR #8, 5 commits):
-  Go non-test: 3319 → 3548 LOC (+229)   tests: → 1989 LOC (~25 new tests)
-  app.go 1187→1394 · nearby.go 377→438 · settings.go 159→196 ·
-  staging.go 156→208 · names.go 41→64 · NEW app_test.go
-  App.svelte 1602→1736
+NEW source files since last scan:
+  selfcert.go            persistentCertificate (stable self-signed cert/fingerprint)
+  firewall_{windows,other}.go   FirewallNeedsFix/FixFirewall (elevated netsh allow rule)
+  reveal_{windows,other}.go     RevealInExplorer (explorer /select · open -R · xdg-open)
+  reuseaddr_{windows,other}.go  SO_REUSEADDR for the multicast listener
+
+modified (significant):
+  localsend.go   send side (performLocalSendUpload, localSendClient), observeLocalSendPeer
+                 (announce + /register), multicastInterfaces skips virtual (isVirtualInterface),
+                 0.0.0.0+JoinGroup RX, SetMulticastInterface TX, UPPERCASE fingerprint pin
+  webreceive.go  HTTPS-only, mobile-first uploadPageHTML (per-file completed rows), Path
+  discovery.go   NearbyPeer.Kind / discoveryIdentity.Kind; localSendPeerTTL (30s) in sweep
+  transfers.go   FileTransfer.Path
+  settings.go    DeviceName + ensureDeviceName
+  app.go         FirewallNeedsFix/FixFirewall/RevealInExplorer; sendToPeer LS branch
+  frontend/App.svelte  firewall banner, persistent phone-receive bar, reveal btn, LS badge
 
 architecture changes:
-  - NEW event: transfer:verify (offer-mismatch keep/discard prompt)
-  - NEW bound method: ConfirmResend (two-phase peer resend)
-  - prompts re-keyed by per-prompt UUID (was transfer id)
-  - receiveExpectation + describeOfferMismatch post-receive verification
-  - sanitizeDisplayName on all peer-supplied display strings
-  - per-source offer backoff (2 min after unanswered offer)
-  - TLS 1.3 minimum on the nearby control channel
-  - updateSettings/settingsMu + atomic 0o600 settings saves
-  - frontend: 2 new modals, a11y token pair (accent-text/danger-strong),
-    document.lang locale sync, semantic lists
+  - LocalSend interop now BIDIRECTIONAL (was receive-only); LS peers listed in
+    Nearby Devices (Kind=localsend) and sendable via performLocalSendUpload
+  - two always-on local HTTPS servers while visible (web/QR upload + LocalSend v2)
+  - Windows: in-app firewall fix (NotifyOnListen often off → no OS prompt);
+    installer also adds the rule
+  - persisted identity (DeviceName + self-cert.pem) → stable LocalSend device
+  - per-OS build-tagged helpers (firewall/reveal/reuseaddr)
 
-new dependencies: none (Go and npm dep sets unchanged)
+new bound methods: StartPhoneReceive, StopPhoneReceive, FirewallNeedsFix,
+  FixFirewall, RevealInExplorer
+new direct deps: golang.org/x/net v0.54.0, golang.org/x/sys v0.44.0
 
-staleness: none >90 days (project docs 1 day old)
+staleness: none >90 days (prior scan 2 days old). Gated adapters
+  (kdeconnect/warpinator/ble) unchanged, OFF by default.
 
-watch-list (carried + updated):
-  - app.go (1394) and App.svelte (1736) — still over the 800-line guideline
-  - stagingDirForCode determinism — unchanged, still breaking-change-sensitive
-  - Wails CLI pin v2.12.0 ↔ go.mod — unchanged
-  - esbuild npm advisories — re-check when vite ships a fixed esbuild range
+watch-list (carried):
+  - app.go (~1430) and App.svelte (~1900) — over the 800-line guideline; extract on touch
+  - stagingDirForCode determinism — breaking-change-sensitive
+  - Wails CLI pin v2.12.0 ↔ go.mod
+  - esbuild npm advisories — dev-toolchain-only; re-check on vite bump
+  - LocalSend UPPERCASE fingerprint — do not normalize to lowercase
