@@ -102,7 +102,9 @@ func writeSelfCert(path string, pemBytes []byte) error {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
+		if rerr := os.Remove(tmp); rerr != nil {
+			logrus.WithError(rerr).Debug("selfcert: could not remove temp cert file")
+		}
 		return err
 	}
 	return nil

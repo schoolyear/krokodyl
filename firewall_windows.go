@@ -44,9 +44,18 @@ func firewallRuleExists(exe string) bool {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return false
+		return false // "No rules match" exits non-zero (locale-independent)
 	}
-	return strings.Contains(strings.ToLower(string(out)), strings.ToLower(exe))
+	// Match the exe path on its own line (the rule's Program: line) rather than
+	// anywhere in the blob — tighter, and locale-independent (the path value is
+	// not translated, unlike the "Program"/"Action" labels).
+	want := strings.ToLower(exe)
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.Contains(strings.ToLower(line), want) {
+			return true
+		}
+	}
+	return false
 }
 
 // fixFirewall resets any stale krokodyl rule and adds a fresh PROGRAM-scoped

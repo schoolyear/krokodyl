@@ -486,6 +486,10 @@ func multicastInterfaces() []net.Interface {
 		iface net.Interface
 		rank  int
 	}
+	// The default-route interface is the one a peer on the real LAN reaches; never
+	// drop it to the name heuristic (guards against a real adapter that happens to
+	// match an excluded name). primaryOutboundIP (netaddr.go) returns its string.
+	primary := net.ParseIP(primaryOutboundIP())
 	var real, any []ranked
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp == 0 ||
@@ -499,7 +503,7 @@ func multicastInterfaces() []net.Interface {
 		}
 		r := ranked{iface, addrRank(ip.String())}
 		any = append(any, r)
-		if !isVirtualInterface(iface.Name) {
+		if !isVirtualInterface(iface.Name) || (primary != nil && ifaceHasIPv4(iface, primary)) {
 			real = append(real, r)
 		}
 	}
@@ -530,6 +534,20 @@ func isVirtualInterface(name string) bool {
 		"default switch", "wan miniport",
 	} {
 		if strings.Contains(n, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// ifaceHasIPv4 reports whether ip is bound to iface.
+func ifaceHasIPv4(iface net.Interface, ip net.IP) bool {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.Equal(ip) {
 			return true
 		}
 	}
