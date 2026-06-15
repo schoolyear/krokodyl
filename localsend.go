@@ -441,7 +441,8 @@ func (r *localSendReceiver) runMulticast() {
 		logrus.WithError(err).Debug("localsend multicast announce unavailable")
 		return
 	}
-	defer uconn.Close()
+	// Single owner: closed via stopCh (matches the listen socket). No defer, to
+	// avoid a redundant double-close on shutdown.
 	go func() { <-r.stopCh; uconn.Close() }()
 	pc := ipv4.NewPacketConn(uconn)
 
@@ -741,6 +742,7 @@ func (r *localSendReceiver) registerWith(host string, port int, fingerprint stri
 		logrus.WithError(err).Infof("localsend: register-back to %s:%d failed", host, port)
 		return
 	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20)) // drain so the conn can close cleanly
 	resp.Body.Close()
 	logrus.Debugf("localsend: registered back to %s:%d (status %d)", host, port, resp.StatusCode)
 }
@@ -888,34 +890,8 @@ func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []
 		if token == "" {
 			continue // peer didn't accept this particular file
 		}
-		f, err := os.Open(p)
-		if err != nil {
-			a.failTransfer(id, "could not open "+names[i])
-			return
-		}
-		q := url.Values{"sessionId": {prep.SessionID}, "fileId": {fileIDs[i]}, "token": {token}}
-		body := &lsCountingReader{r: f, onRead: func(n int) {
-			sent += int64(n)
-			pct := 100
-			if totalSize > 0 {
-				if pct = int(sent * 100 / totalSize); pct > 100 {
-					pct = 100
-				}
-			}
-			a.tm.update(id, func(t *FileTransfer) { t.Progress = pct })
-		}}
-		ureq, _ := http.NewRequest(http.MethodPost, base+"upload?"+q.Encode(), body)
-		ureq.Header.Set("Content-Type", "application/octet-stream")
-		ureq.ContentLength = meta[fileIDs[i]].Size
-		ures, err := client.Do(ureq)
-		f.Close()
-		if err != nil {
-			a.failTransfer(id, fmt.Sprintf("upload to %s failed", peer.Name))
-			return
-		}
-		ures.Body.Close()
-		if ures.StatusCode != http.StatusOK {
-			a.failTransfer(id, fmt.Sprintf("%s rejected %s (%d)", peer.Name, names[i], ures.StatusCode))
+		if err := a.uploadLocalSendFile(client, base, prep.SessionID, fileIDs[i], token, p, meta[fileIDs[i]].Size, &sent, totalSize, id); err != nil {
+			a.failTransfer(id, fmt.Sprintf("%s: %v", peer.Name, err))
 			return
 		}
 	}
@@ -925,4 +901,44 @@ func (a *App) performLocalSendUpload(id string, peer NearbyPeer, paths, names []
 		t.Status = FileTransferStatusCompleted
 		t.Progress = 100
 	})
+}
+
+// uploadLocalSendFile streams one file to a LocalSend peer's upload endpoint,
+// advancing the shared byte counter (atomic — the HTTP transport may read the
+// body from a different goroutine). Closes the file and response body on every
+// path.
+func (a *App) uploadLocalSendFile(client *http.Client, base, sessionID, fileID, token, path string, size int64, sent *int64, totalSize int64, transferID string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("could not open %s", filepath.Base(path))
+	}
+	defer f.Close()
+
+	body := &lsCountingReader{r: f, onRead: func(n int) {
+		total := atomic.AddInt64(sent, int64(n))
+		pct := 100
+		if totalSize > 0 {
+			if pct = int(total * 100 / totalSize); pct > 100 {
+				pct = 100
+			}
+		}
+		a.tm.update(transferID, func(t *FileTransfer) { t.Progress = pct })
+	}}
+	q := url.Values{"sessionId": {sessionID}, "fileId": {fileID}, "token": {token}}
+	req, err := http.NewRequest(http.MethodPost, base+"upload?"+q.Encode(), body)
+	if err != nil {
+		return fmt.Errorf("build upload request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = size
+
+	res, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("upload failed: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("rejected %s (%d)", filepath.Base(path), res.StatusCode)
+	}
+	return nil
 }
