@@ -234,9 +234,18 @@ func (r *localSendReceiver) handleRegister(w http.ResponseWriter, req *http.Requ
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// We don't need the peer's body to function; reply with our own info so the
-	// peer can reach us. (Bodies are bounded by ReadHeaderTimeout + the default
-	// server limits.)
+	// The peer registers back to us — typically right after hearing our announce
+	// — so learn it here to list it in Nearby Devices instantly and reliably,
+	// instead of waiting for its own (lossy, infrequent) multicast announce.
+	var info lsDeviceInfo
+	if json.NewDecoder(io.LimitReader(req.Body, 1<<20)).Decode(&info) == nil {
+		host := req.RemoteAddr
+		if h, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+			host = h
+		}
+		r.observeLocalSendPeer(info, host)
+	}
+	// Reply with our own info so the peer can reach us.
 	writeJSON(w, http.StatusOK, r.self)
 }
 
@@ -561,31 +570,9 @@ func (r *localSendReceiver) readAnnouncements(pc *ipv4.PacketConn) {
 		if ua, ok := src.(*net.UDPAddr); ok {
 			host = ua.IP.String()
 		}
-		// Surface the LocalSend device in the shared Nearby Devices list so the
-		// user can send to it. A fingerprint is required (it's both the stable
-		// id and the cert pin used when we upload); re-observing on each 3s
-		// announce keeps it alive past the registry TTL. The id is namespaced so
-		// it can't collide with a krokodyl peer's UUID.
-		if r.registry != nil && info.Fingerprint != "" {
-			r.mu.Lock()
-			_, known := r.seen[info.Fingerprint]
-			if !known {
-				r.seen[info.Fingerprint] = struct{}{}
-			}
-			r.mu.Unlock()
-			if !known {
-				logrus.Infof("localsend: discovered %q at %s:%d (will register back so it lists us)",
-					sanitizeDisplayName(info.Alias), host, info.Port)
-			}
-			r.registry.observe(discoveryIdentity{
-				ID:          "ls-" + info.Fingerprint,
-				Name:        sanitizeDisplayName(info.Alias),
-				Port:        info.Port,
-				Fingerprint: info.Fingerprint,
-				Addrs:       []string{host},
-				Kind:        "localsend",
-			}, host, time.Now())
-		}
+		// Surface the device in Nearby Devices (also done from handleRegister,
+		// the more reliable path).
+		r.observeLocalSendPeer(info, host)
 		// Bound concurrent register-backs so a multicast flood can't spawn
 		// unbounded goroutines / outbound POSTs; drop when saturated.
 		select {
@@ -597,6 +584,37 @@ func (r *localSendReceiver) readAnnouncements(pc *ipv4.PacketConn) {
 		default:
 		}
 	}
+}
+
+// observeLocalSendPeer surfaces a LocalSend device in the shared Nearby Devices
+// list. Called both when we hear its multicast announce AND when it registers
+// back to us over HTTP. The register path is the reliable one: a LocalSend
+// device register-backs whenever it hears our announce (we announce every 3s),
+// so the peer appears within one interval instead of only when its own lossy
+// multicast happens to arrive. Re-observing refreshes the registry TTL, keeping
+// the entry stable. The id is namespaced so it can't collide with a krokodyl
+// peer's UUID.
+func (r *localSendReceiver) observeLocalSendPeer(info lsDeviceInfo, host string) {
+	if r.registry == nil || info.Fingerprint == "" || info.Fingerprint == r.self.Fingerprint {
+		return
+	}
+	r.mu.Lock()
+	_, known := r.seen[info.Fingerprint]
+	if !known {
+		r.seen[info.Fingerprint] = struct{}{}
+	}
+	r.mu.Unlock()
+	if !known {
+		logrus.Infof("localsend: discovered %q at %s:%d", sanitizeDisplayName(info.Alias), host, info.Port)
+	}
+	r.registry.observe(discoveryIdentity{
+		ID:          "ls-" + info.Fingerprint,
+		Name:        sanitizeDisplayName(info.Alias),
+		Port:        info.Port,
+		Fingerprint: info.Fingerprint,
+		Addrs:       []string{host},
+		Kind:        "localsend",
+	}, host, time.Now())
 }
 
 // controlReuseAddr is a net.ListenConfig hook that sets SO_REUSEADDR on the
