@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"sync"
@@ -103,6 +104,9 @@ type localSendReceiver struct {
 
 	mu       sync.Mutex
 	sessions map[string]*lsSession
+	// seen tracks fingerprints we've already logged, so discovery logging is
+	// one line per device, not one per 3s announce.
+	seen map[string]struct{}
 
 	// offerBusy enforces one pending accept prompt at a time, so a hostile LAN
 	// device can't spam prompts / pile up blocked goroutines.
@@ -175,6 +179,7 @@ func newLocalSendReceiver(dest, alias string, port int, registry *peerRegistry, 
 		onOffer:     onOffer,
 		onFile:      onFile,
 		sessions:    make(map[string]*lsSession),
+		seen:        make(map[string]struct{}),
 		registerSem: make(chan struct{}, 8),
 		stopCh:      make(chan struct{}),
 	}
@@ -527,6 +532,16 @@ func (r *localSendReceiver) readAnnouncements(pc *ipv4.PacketConn) {
 		// announce keeps it alive past the registry TTL. The id is namespaced so
 		// it can't collide with a krokodyl peer's UUID.
 		if r.registry != nil && info.Fingerprint != "" {
+			r.mu.Lock()
+			_, known := r.seen[info.Fingerprint]
+			if !known {
+				r.seen[info.Fingerprint] = struct{}{}
+			}
+			r.mu.Unlock()
+			if !known {
+				logrus.Infof("localsend: discovered %q at %s:%d (will register back so it lists us)",
+					sanitizeDisplayName(info.Alias), host, info.Port)
+			}
 			r.registry.observe(discoveryIdentity{
 				ID:          "ls-" + info.Fingerprint,
 				Name:        sanitizeDisplayName(info.Alias),
@@ -576,6 +591,7 @@ func (a *App) startLocalSend(dest string) {
 			Size:     size,
 			Status:   FileTransferStatusCompleted,
 			Progress: 100,
+			Path:     filepath.Join(dest, name),
 		})
 	})
 	if err != nil {
@@ -667,9 +683,13 @@ func (r *localSendReceiver) registerWith(host string, port int, fingerprint stri
 	url := "https://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/api/localsend/v2/register"
 	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
+		// This is the path that makes the peer list us; failures explain "the
+		// phone doesn't see krokodyl" (cert mismatch, unreachable, blocked).
+		logrus.WithError(err).Infof("localsend: register-back to %s:%d failed", host, port)
 		return
 	}
 	resp.Body.Close()
+	logrus.Debugf("localsend: registered back to %s:%d (status %d)", host, port, resp.StatusCode)
 }
 
 // pinFingerprint verifies a presented self-signed cert against the SHA-256

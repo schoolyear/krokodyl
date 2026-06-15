@@ -346,6 +346,7 @@ func (a *App) ensureReceiving(dest string) {
 			Size:     size,
 			Status:   FileTransferStatusCompleted,
 			Progress: 100,
+			Path:     filepath.Join(dest, name),
 		})
 	})
 	if err != nil {
@@ -471,6 +472,9 @@ const uploadPageHTML = `<!doctype html>
  .status{text-align:center;font-weight:600;font-size:.88rem;min-height:1.15rem}
  .status.ok{color:var(--accent-t)}
  .status.err{color:#ff6b5e}
+ .file.done{border-color:var(--accent-t)}
+ .file .check{color:var(--accent-t);font-weight:700;flex-shrink:0}
+ .file .badge{color:var(--accent-t);font-size:.72rem;font-weight:700;flex-shrink:0}
  .send{width:100%%;padding:1rem;font-size:1.05rem;font-weight:700;border:0;border-radius:14px;background:var(--accent);color:#fff;cursor:pointer;min-height:54px}
  .send:active:not(:disabled){background:var(--accent-h)}
  .send:disabled{opacity:.45;cursor:default}
@@ -481,6 +485,7 @@ const uploadPageHTML = `<!doctype html>
    <span class="logo" aria-hidden="true">🐊</span>
    <div><h1>Send to krokodyl</h1><p class="sub">Files arrive in the computer's downloads.</p></div>
   </header>
+  <div class="files" id="done"></div>
   <label class="drop" id="drop" for="pick">
    <span class="ico" aria-hidden="true">📤</span>
    <span class="big">Tap to choose files</span>
@@ -496,9 +501,19 @@ const uploadPageHTML = `<!doctype html>
  </div>
  <script>
   var TOKEN='%[1]s';
-  var pick=document.getElementById('pick'),drop=document.getElementById('drop'),list=document.getElementById('list'),send=document.getElementById('send'),status=document.getElementById('status'),bar=document.getElementById('bar'),fill=document.getElementById('fill');
-  var files=[];
+  var pick=document.getElementById('pick'),drop=document.getElementById('drop'),list=document.getElementById('list'),send=document.getElementById('send'),status=document.getElementById('status'),bar=document.getElementById('bar'),fill=document.getElementById('fill'),done=document.getElementById('done');
+  var files=[],completed=[];
   function sz(n){if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(0)+' KB';if(n<1073741824)return (n/1048576).toFixed(1)+' MB';return (n/1073741824).toFixed(2)+' GB';}
+  function renderDone(){
+   done.innerHTML='';
+   completed.forEach(function(f){
+    var r=document.createElement('div');r.className='file done';
+    var c=document.createElement('span');c.className='check';c.textContent='✓';
+    var n=document.createElement('span');n.className='nm';n.textContent=f.name;
+    var s=document.createElement('span');s.className='badge';s.textContent='Completed';
+    r.appendChild(c);r.appendChild(n);r.appendChild(s);done.appendChild(r);
+   });
+  }
   function render(){
    list.innerHTML='';
    files.forEach(function(f,i){
@@ -524,7 +539,7 @@ const uploadPageHTML = `<!doctype html>
    x.upload.onprogress=function(e){if(e.lengthComputable)fill.style.width=(e.loaded/e.total*100)+'%%';};
    x.onload=function(){
     bar.style.display='none';fill.style.width='0';
-    if(x.status===200){status.className='status ok';status.textContent='✅ Sent — you can send more';files=[];render();}
+    if(x.status===200){files.forEach(function(f){completed.push({name:f.name});});files=[];render();renderDone();status.className='status ok';status.textContent='✅ Sent — choose more to send again';}
     else{status.className='status err';status.textContent='❌ Failed ('+x.status+')';send.disabled=false;}
    };
    x.onerror=function(){bar.style.display='none';status.className='status err';status.textContent='❌ Connection lost';send.disabled=false;};

@@ -34,6 +34,8 @@ export function RespondToNearbyOffer(arg1:string,arg2:boolean):Promise<void>;
 
 export function RespondToOverwrite(arg1:string,arg2:string):Promise<void>;
 
+export function RevealInExplorer(arg1:string):Promise<void>;
+
 export function SelectDirectory():Promise<string>;
 
 export function SelectFile():Promise<string>;

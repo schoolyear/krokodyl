@@ -13,6 +13,7 @@ export namespace main {
 	    error?: string;
 	    paths?: string[];
 	    resendable?: boolean;
+	    path?: string;
 	    peerMachineId?: string;
 	    resumeCode?: string;
 	
@@ -34,6 +35,7 @@ export namespace main {
 	        this.error = source["error"];
 	        this.paths = source["paths"];
 	        this.resendable = source["resendable"];
+	        this.path = source["path"];
 	        this.peerMachineId = source["peerMachineId"];
 	        this.resumeCode = source["resumeCode"];
 	    }

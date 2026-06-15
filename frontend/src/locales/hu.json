@@ -37,7 +37,9 @@
     "unknown_file": "Ismeretlen fájl",
     "copy_prompt": "Kattints a másoláshoz",
     "cancel": "Mégse",
-    "resend": "Újraküldés"
+    "resend": "Újraküldés",
+    "reveal": "Megnyitás mappában",
+    "reveal_failed": "Nem sikerült megnyitni a fájlt."
   },
   "status": {
     "completed": "befejezve",

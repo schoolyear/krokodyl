@@ -37,7 +37,9 @@
     "unknown_file": "未知文件",
     "copy_prompt": "点击复制",
     "cancel": "取消",
-    "resend": "再次发送"
+    "resend": "再次发送",
+    "reveal": "在文件夹中打开",
+    "reveal_failed": "无法打开文件。"
   },
   "status": {
     "completed": "已完成",

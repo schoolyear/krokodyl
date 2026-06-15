@@ -1417,6 +1417,25 @@ func (a *App) FixFirewall() error {
 	return fixFirewall()
 }
 
+// RevealInExplorer opens the OS file manager with the transfer's file selected
+// (received files) or its source selected (sends). The path comes from
+// krokodyl's own transfer records and is passed as an argv element (no shell),
+// so there is no injection surface.
+func (a *App) RevealInExplorer(transferID string) error {
+	t, ok := a.tm.get(transferID)
+	if !ok {
+		return fmt.Errorf("transfer not found")
+	}
+	target := t.Path
+	if target == "" && len(t.Paths) > 0 {
+		target = t.Paths[0]
+	}
+	if target == "" {
+		return fmt.Errorf("no file to open for this transfer")
+	}
+	return revealPath(target)
+}
+
 // ClearHistory empties the transfer list and the persisted history file.
 func (a *App) ClearHistory() {
 	a.tm.reset()

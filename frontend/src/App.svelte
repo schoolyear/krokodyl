@@ -8,7 +8,7 @@
 
   // Wails imports
   import { EventsOn, Environment } from '../wailsjs/runtime/runtime.js';
-  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive, FirewallNeedsFix, FixFirewall } from '../wailsjs/go/main/App.js';
+  import { SendFiles, ReceiveFile, GetTransfers, SelectFiles, SelectDirectory, GetDefaultDownloadPath, RespondToOverwrite, CancelTransfer, GetNearbyPeers, SendToPeer, RespondToNearbyOffer, ResendTransfer, ConfirmResend, GetNearbyPrefs, SetNearbyVisible, ClearHistory, GetDeviceName, GetBuildStamp, GetOfflineGuidance, StartPhoneReceive, FirewallNeedsFix, FixFirewall, RevealInExplorer } from '../wailsjs/go/main/App.js';
 
   // --- State ---
   let isReady = $state(false); // Tracks if i18n is initialized
@@ -27,6 +27,8 @@
     resendable?: boolean;
     peerMachineId?: string;
     resumeCode?: string;
+    path?: string;
+    paths?: string[];
   }
 
   interface NearbyOffer {
@@ -385,6 +387,16 @@
     }, 3000);
   }
 
+  // revealTransfer opens the saved (or sent) file in the OS file manager.
+  async function revealTransfer(id: string) {
+    try {
+      await RevealInExplorer(id);
+    } catch (error) {
+      console.error('could not reveal file', error);
+      showToast($_('transfer.reveal_failed'), 'error');
+    }
+  }
+
   // runFirewallFix triggers the backend's elevated rule add (one UAC prompt),
   // then re-checks so the banner clears on success.
   async function runFirewallFix() {
@@ -615,6 +627,12 @@
         </button>
       </div>
 
+      <!-- Always-available: phone receiving is on whenever krokodyl is visible,
+           so this entry sits above both tabs rather than buried in one. -->
+      <button class="phone-receive-bar" onclick={startPhoneReceive} disabled={phoneReceiveLoading}>
+        <span aria-hidden="true">📱</span> {$_('phone.cta')}
+      </button>
+
       {#if activeTab === 'send'}
         <div class="panel" id="panel-send" role="tabpanel" aria-labelledby="tab-send">
           {#if waitingSend?.code}
@@ -713,9 +731,6 @@
             {/if}
           </button>
 
-          <button class="offline-cta" onclick={startPhoneReceive} disabled={phoneReceiveLoading}>
-            <span aria-hidden="true">📱</span> {$_('phone.cta')}
-          </button>
         </div>
       {/if}
     </section>
@@ -783,6 +798,11 @@
                 {:else if transfer.resendable}
                   <button class="btn resend-btn" onclick={() => resendTransfer(transfer.id)} title={$_('transfer.resend')}>
                     ↻ {$_('transfer.resend')}
+                  </button>
+                {/if}
+                {#if transfer.status === 'completed' && (transfer.path || (transfer.paths && transfer.paths.length))}
+                  <button class="btn reveal-btn" onclick={() => revealTransfer(transfer.id)} title={$_('transfer.reveal')}>
+                    📂 {$_('transfer.reveal')}
                   </button>
                 {/if}
               </div>
@@ -1697,6 +1717,22 @@
     border: 1px solid var(--color-primary);
   }
 
+  .reveal-btn {
+    margin-top: 0.25rem;
+    padding: 0.3rem 0.625rem;
+    min-height: 1.5rem;
+    font-size: clamp(0.72rem, 2vw, 0.82rem);
+    font-weight: 700;
+    background-color: transparent;
+    color: var(--color-text-dim);
+    border: 1px solid var(--color-border);
+  }
+
+  .reveal-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-text-dim);
+  }
+
   .resend-btn:hover {
     /* Darker green keeps white label text above 4.5:1 on hover. */
     background-color: var(--color-primary-strong);
@@ -1829,6 +1865,35 @@
   .offline-cta:hover {
     border-color: var(--color-primary);
     color: var(--color-accent-text);
+  }
+
+  /* Persistent phone-receive entry, sits above both tabs. */
+  .phone-receive-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.6rem 0.75rem;
+    background-color: var(--color-bg-lighter);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+
+  .phone-receive-bar:hover:not(:disabled) {
+    border-color: var(--color-primary);
+    color: var(--color-accent-text);
+  }
+
+  .phone-receive-bar:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .offline-modal {

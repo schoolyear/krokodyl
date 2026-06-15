@@ -37,7 +37,9 @@
     "unknown_file": "Unknown File",
     "copy_prompt": "Click to copy",
     "cancel": "Cancel",
-    "resend": "Send again"
+    "resend": "Send again",
+    "reveal": "Open in folder",
+    "reveal_failed": "Could not open the file."
   },
   "status": {
     "completed": "completed",

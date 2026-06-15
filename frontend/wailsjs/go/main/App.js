@@ -66,6 +66,10 @@ export function RespondToOverwrite(arg1, arg2) {
   return window['go']['main']['App']['RespondToOverwrite'](arg1, arg2);
 }
 
+export function RevealInExplorer(arg1) {
+  return window['go']['main']['App']['RevealInExplorer'](arg1);
+}
+
 export function SelectDirectory() {
   return window['go']['main']['App']['SelectDirectory']();
 }

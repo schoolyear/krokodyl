@@ -19,6 +19,9 @@ type FileTransfer struct {
 	// transfer can be repeated with one click.
 	Paths      []string `json:"paths,omitempty"`
 	Resendable bool     `json:"resendable,omitempty"`
+	// Path is the saved file's location on disk (received files) so the UI can
+	// reveal it in the OS file manager. Empty for multi-file/code receives.
+	Path string `json:"path,omitempty"`
 	// PeerMachineID is the stable id of the device a peer send went to, so a
 	// repeat can reach the same machine even after it restarts and renames.
 	PeerMachineID string `json:"peerMachineId,omitempty"`

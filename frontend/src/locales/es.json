@@ -37,7 +37,9 @@
     "unknown_file": "Archivo desconocido",
     "copy_prompt": "Haga clic para copiar",
     "cancel": "Cancelar",
-    "resend": "Enviar de nuevo"
+    "resend": "Enviar de nuevo",
+    "reveal": "Abrir en carpeta",
+    "reveal_failed": "No se pudo abrir el archivo."
   },
   "status": {
     "completed": "completado",

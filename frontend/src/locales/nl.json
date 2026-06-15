@@ -37,7 +37,9 @@
     "unknown_file": "Onbekend Bestand",
     "copy_prompt": "Klik om te kopiëren",
     "cancel": "Annuleren",
-    "resend": "Opnieuw versturen"
+    "resend": "Opnieuw versturen",
+    "reveal": "Open in map",
+    "reveal_failed": "Kan het bestand niet openen."
   },
   "status": {
     "completed": "voltooid",
