@@ -168,10 +168,13 @@ func newLocalSendReceiver(dest, alias string, port int, registry *peerRegistry, 
 		dest: dest,
 		port: bound,
 		self: lsDeviceInfo{
-			Alias:       alias,
-			Version:     localSendVersion,
-			DeviceType:  "desktop",
-			Fingerprint: certFingerprint(cert.Certificate[0]),
+			Alias:      alias,
+			Version:    localSendVersion,
+			DeviceType: "desktop",
+			// LocalSend's fingerprint convention is UPPERCASE hex of the cert's
+			// SHA-256 (verified against their own unit test); announce it that way
+			// so LocalSend peers accept krokodyl when they pin us.
+			Fingerprint: strings.ToUpper(certFingerprint(cert.Certificate[0])),
 			Port:        bound,
 			Protocol:    "https",
 			Download:    false,
@@ -730,14 +733,19 @@ func (r *localSendReceiver) registerWith(host string, port int, fingerprint stri
 // rejected, so this primitive can never silently yield an unauthenticated TLS
 // connection. Callers that have no fingerprint must not dial at all.
 func pinFingerprint(expected string) func([][]byte, [][]*x509.Certificate) error {
+	// LocalSend announces the fingerprint as UPPERCASE hex; krokodyl computes it
+	// lowercase. It's a hex digest, so case is not meaningful — compare
+	// case-insensitively (lowercase both) or every krokodyl<->LocalSend pin fails.
+	want := strings.ToLower(expected)
 	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-		if expected == "" {
+		if want == "" {
 			return fmt.Errorf("no expected fingerprint to pin against")
 		}
 		if len(rawCerts) == 0 {
 			return fmt.Errorf("peer presented no certificate")
 		}
-		if subtle.ConstantTimeCompare([]byte(certFingerprint(rawCerts[0])), []byte(expected)) != 1 {
+		got := strings.ToLower(certFingerprint(rawCerts[0]))
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 			return fmt.Errorf("peer certificate does not match announced fingerprint")
 		}
 		return nil
